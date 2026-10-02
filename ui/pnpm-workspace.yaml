@@ -1,0 +1,12 @@
+packages:
+  - "."
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  esbuild: 0.28.2
+  glob: 13.0.6
+  js-yaml: 4.2.0
+  picomatch: 4.0.5
+  postcss: 8.5.26

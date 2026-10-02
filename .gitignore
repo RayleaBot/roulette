@@ -1,0 +1,12 @@
+/.rayleabot/
+/dist/
+/go.work
+/go.work.sum
+/ui/dist/
+/ui/node_modules/
+/output/
+/.playwright-cli/
+/.impeccable/review/
+*.log
+/.impeccable/mocks/
+/.impeccable/questions/

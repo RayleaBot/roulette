@@ -1,0 +1,77 @@
+{
+  "id": "raylea.roulette",
+  "name": "轮盘",
+  "version": "0.1.0",
+  "manifest_version": "4",
+  "license": "AGPL-3.0-only",
+  "min_core_version": "0.7.0",
+  "metadata": {
+    "description": "群聊俄罗斯轮盘，支持随机禁言、群规则覆盖与 Web 设置",
+    "author": "raylea",
+    "keywords": ["roulette", "game", "onebot11"]
+  },
+  "concurrency": 4,
+  "events": [
+    "message.group",
+    "message.private",
+    "management.action",
+    "config.changed",
+    "bot.identities.changed"
+  ],
+  "default_config": {
+    "trigger_commands": ["轮盘", "俄罗斯轮盘", "roulette"],
+    "rules": {
+      "random_chambers": true,
+      "chambers": 6,
+      "chambers_max": 8,
+      "random_bullets": false,
+      "bullets": 1,
+      "bullets_max": 2,
+      "random_mute": true,
+      "mute_seconds": 1,
+      "mute_max_seconds": 300,
+      "timeout_seconds": 600,
+      "timeout_mute": false,
+      "end_when_all_loaded": true
+    },
+    "replies": {
+      "start": "新一轮轮盘开始：<chamber> 个弹膛，<bullet> 发子弹。命中禁言 <mute-f>，<timeout-f> 后结束。",
+      "miss": "<target> 扣下扳机，空枪！还剩 <remain-chamber> 个弹膛、<remain-bullet> 发子弹。",
+      "hit": "<target> 命中，已禁言 <mute-f>。",
+      "immune": "<target> 命中，但当前群权限不允许机器人禁言该成员，本次豁免。",
+      "end": "子弹已耗尽，本轮结束。",
+      "all_loaded": "剩余 <remain-chamber> 个弹膛均有子弹，本轮提前结束。",
+      "timeout": "本轮已超时，游戏结束。",
+      "timeout_hit": "本轮已超时，发起人 <target> 已被禁言 <mute-f>。",
+      "timeout_immune": "本轮已超时，游戏结束。发起人 <target> 因群权限无法被禁言，本次豁免。",
+      "stopped": "本轮已由管理员停止。"
+    },
+    "group_overrides": []
+  },
+  "commands": [
+    {
+      "id": "roulette",
+      "name": "轮盘",
+      "description": "开启轮盘或继续开枪",
+      "usage": "/轮盘",
+      "permission": "everyone",
+      "trigger": { "type": "setting", "settings_key": "trigger_commands" }
+    },
+    {
+      "id": "roulette-stop",
+      "name": "停止轮盘",
+      "description": "停止本群轮盘，不施加超时惩罚",
+      "usage": "/停止轮盘",
+      "permission": "group_admin",
+      "trigger": { "type": "exact", "names": ["停止轮盘"] }
+    }
+  ],
+  "help": {
+    "title": "轮盘",
+    "summary": "OneBot11 群聊轮盘；机器人需要群管理权限"
+  },
+  "management_ui": {
+    "entry": "ui/index.html",
+    "pages": [{ "id": "settings", "label": "轮盘设置" }]
+  }
+}
