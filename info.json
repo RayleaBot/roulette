@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "manifest_version": "4",
   "license": "AGPL-3.0-only",
-  "min_core_version": "0.7.0",
+  "min_core_version": "0.4.0",
   "metadata": {
     "description": "群聊俄罗斯轮盘，支持随机禁言、群规则覆盖与 Web 设置",
     "author": "raylea",

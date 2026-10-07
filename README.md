@@ -1,6 +1,6 @@
 # 轮盘
 
-RayleaBot 独立插件 `raylea.roulette`，仅提供 OneBot11 群聊俄罗斯轮盘与 Web 设置。需要 Core **0.7.0 或更高版本**、群内机器人管理权限。
+RayleaBot 独立插件 `raylea.roulette`，仅提供 OneBot11 群聊俄罗斯轮盘与 Web 设置。需要 Core **0.4.0 或更高版本**、群内机器人管理权限。
 
 玩法参考 [MuteGames](https://github.com/EvolvedGhost/MuteGames/tree/master/src/main/kotlin/roulette)，使用 RayleaBot Go SDK 独立实现。没有自裁、决斗、21 点或其他游戏功能。
 
@@ -48,7 +48,7 @@ RayleaBot 独立插件 `raylea.roulette`，仅提供 OneBot11 群聊俄罗斯轮
 
 ## 开发与验证
 
-当前版本使用 Go 1.27.1、Node 26.10.0、pnpm 11.25.0；Go SDK 固定为 v0.7.0。Web 使用 Vue 3、TypeScript 与 Vite，产物自带运行时和样式，无外部 CDN。
+当前版本使用 Go 1.27.1、Node 26.10.0、pnpm 11.25.0；Go SDK 固定为 v0.6.0。Web 使用 Vue 3、TypeScript 与 Vite，产物自带运行时和样式，无外部 CDN。
 
 本地关联 RayleaBot 源码 SDK：
 

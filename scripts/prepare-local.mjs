@@ -31,6 +31,6 @@ const quote = (p) =>
   JSON.stringify(path.relative(root, p).replaceAll("\\", "/") || ".");
 await fs.writeFile(
   path.join(root, "go.work"),
-  `go 1.27.1\n\nuse (\n ${quote(root)}\n ${quote(sdkGo)}\n)\n\nreplace github.com/RayleaBot/RayleaBot/sdk/go v0.7.0 => ${quote(sdkGo)}\n`,
+  `go 1.27.1\n\nuse (\n ${quote(root)}\n ${quote(sdkGo)}\n)\n\nreplace github.com/RayleaBot/RayleaBot/sdk/go v0.6.0 => ${quote(sdkGo)}\n`,
 );
 console.log(`Local SDK workspace ready: ${root}`);
