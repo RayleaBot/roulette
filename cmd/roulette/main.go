@@ -7,7 +7,7 @@ import (
 	"os/signal"
 
 	rayleabot "github.com/RayleaBot/RayleaBot/sdk/go"
-	"github.com/RayleaBot/plugin-roulette/internal/plugin"
+	"github.com/RayleaBot/roulette/internal/plugin"
 )
 
 func main() {

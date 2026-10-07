@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/RayleaBot/plugin-roulette"
+	"github.com/RayleaBot/roulette"
 )
 
 const MaxTimeout = 3570

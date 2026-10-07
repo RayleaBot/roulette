@@ -1,4 +1,4 @@
-module github.com/RayleaBot/plugin-roulette
+module github.com/RayleaBot/roulette
 
 go 1.27.1
 
