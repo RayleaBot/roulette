@@ -48,7 +48,7 @@ RayleaBot 独立插件 `raylea.roulette`，仅提供 OneBot11 群聊俄罗斯轮
 
 ## 开发与验证
 
-当前版本使用 Go 1.27.1、Node 26.10.0、pnpm 11.25.0；Go SDK 固定为 v0.6.0。Web 使用 Vue 3、TypeScript 与 Vite，产物自带运行时和样式，无外部 CDN。
+当前版本使用 Go 1.27.2、Node 26.10.0、pnpm 11.25.0；Go SDK 固定为 v0.6.0。Web 使用 Vue 3、TypeScript 与 Vite，产物自带运行时和样式，无外部 CDN。
 
 本地关联 RayleaBot 源码 SDK：
 
