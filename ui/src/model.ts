@@ -21,14 +21,6 @@ export interface Issue {
   field: string;
   message: string;
 }
-export interface Adapter {
-  id: string;
-  protocol: string;
-  display_name: string;
-  enabled: boolean;
-  state: string;
-  identity?: { id: string; name: string; avatar_url?: string };
-}
 export interface Group {
   target_id: string;
   target_name: string;
@@ -44,7 +36,7 @@ const object = (v: unknown): v is Record<string, unknown> =>
 
 // Preserve invalid declared values so administrators can see and correct them.
 // Undeclared values are dropped in the same way as the backend decoder.
-export function normalize(raw: Record<string, unknown>, adapters: Adapter[] = []): Settings {
+export function normalize(raw: Record<string, unknown>): Settings {
   const d = defaults();
   const known = <T extends object>(base: T, v: unknown): T =>
     Object.fromEntries(
@@ -70,11 +62,8 @@ export function normalize(raw: Record<string, unknown>, adapters: Adapter[] = []
     group_overrides: Array.isArray(raw.group_overrides)
       ? raw.group_overrides.map((v: unknown) => {
           const g = object(v) ? v : {};
-          const botID = g.bot_id === undefined || g.bot_id === ""
-            ? adapters.find((a) => a.protocol === "onebot11" && a.id === g.source_adapter)?.identity?.id ?? ""
-            : String(g.bot_id ?? "");
           return {
-            bot_id: botID,
+            bot_id: String(g.bot_id ?? ""),
             group_id: String(g.group_id ?? ""),
             group_name: String(g.group_name ?? ""),
             rules: patch(d.rules, g.rules),
@@ -237,7 +226,7 @@ export function validate(s: Settings, maxTimeout = 3570): Issue[] {
       !/^[1-9][0-9]{0,19}$/.test(g.bot_id) ||
       !/^[1-9][0-9]{0,19}$/.test(g.group_id)
     )
-      add(prefix.slice(0, -1), "请选择此记录，再添加同一群以绑定机器人账号。");
+      add(prefix.slice(0, -1), "需要有效的机器人账号和群号。");
     if ([...(g.group_name ?? "")].length > 100)
       add(`${prefix}group_name`, "群名不能超过 100 字。");
     if (seen.has(groupKey(g)))

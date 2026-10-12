@@ -36,8 +36,8 @@ type Handler struct {
 	// Fixed stripes bound lock storage even after many groups have played.
 	lanes           [256]sync.Mutex
 	settingsMu      sync.Mutex
-	settingsInput   string
-	settingsConfig  Config
+	settingsValues  map[string]any
+	settingsEchoes  map[string]int
 	identities      map[string]string
 	identitiesKnown bool
 	random          func(int) (int, error)

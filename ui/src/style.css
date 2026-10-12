@@ -487,6 +487,65 @@ svg.i {
   height: 100vh;
   min-height: 520px;
 }
+.app.history-view {
+  grid-template-columns: 288px minmax(0, 1fr);
+}
+.reply-overrides,
+.history-panel {
+  min-width: 0;
+  overflow: auto;
+  padding: 24px 26px;
+  background: var(--panel);
+}
+.reply-overrides summary,
+.history-panel summary {
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+.reply-field {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+.reply-field:disabled {
+  background: var(--sunken);
+}
+.history-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.history-actions select {
+  max-width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--control);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+.history-record p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.add-body.account-groups {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 1080px) {
+  .app.history-view { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .history-actions select { min-height: 44px; }
+}
 .load-state {
   display: grid;
   place-items: center;

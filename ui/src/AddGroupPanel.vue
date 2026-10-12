@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import Avatar from "./Avatar.vue";
-import { groupKey, type Adapter, type Group, type GroupOverride } from "./model";
-import { botAvatar, botName, botState, groupAvatar, usableBot } from "./identity";
+import { type Group, type GroupOverride } from "./model";
+import { groupAvatar } from "./identity";
 
 const props = defineProps<{
   open: boolean;
-  adapters: Adapter[];
-  adaptersLoading: boolean;
-  adapterStatus: string;
-  botId: string;
+  botLabel: string;
   groups: Group[];
   groupsLoading: boolean;
   groupStatus: string;
@@ -19,10 +16,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
-  "choose-bot": [id: string];
   add: [targetId: string];
   open: [index: number];
-  "refresh-adapters": [];
   "reload-groups": [];
 }>();
 
@@ -31,7 +26,6 @@ const search = ref<HTMLInputElement | null>(null);
 const query = ref("");
 const targetId = ref("");
 
-const bot = computed(() => props.adapters.find((a) => a.identity?.id === props.botId));
 const visible = computed(() => {
   const q = query.value.trim().toLowerCase();
   return q
@@ -39,28 +33,9 @@ const visible = computed(() => {
     : props.groups;
 });
 const picked = computed(() => props.groups.find((g) => g.target_id === targetId.value));
-// Overrides are keyed by bot account and group, so the same group
-// under another bot is a separate entry.
-const existing = (group: Group) => {
-  const identity = bot.value?.identity;
-  if (!identity) return -1;
-  const key = groupKey({
-    bot_id: identity.id,
-    group_id: group.target_id,
-    rules: {},
-    replies: {},
-  });
-  return props.overrides.findIndex((g) => groupKey(g) === key);
-};
+const existing = (group: Group) => props.overrides.findIndex((g) => g.group_id === group.target_id);
 const pickedExisting = computed(() => (picked.value ? existing(picked.value) : -1));
 
-watch(
-  () => props.botId,
-  () => {
-    query.value = "";
-    targetId.value = "";
-  },
-);
 watch(
   () => props.open,
   async (open) => {
@@ -78,14 +53,14 @@ watch(
       else el.setAttribute("open", "");
     }
     await nextTick();
-    (props.botId ? search.value : el.querySelector<HTMLElement>(".bot-card:not(:disabled)"))?.focus();
+    search.value?.focus();
   },
   { flush: "post" },
 );
 watch(
   () => props.groupsLoading,
   async (loading) => {
-    if (!loading && props.open && props.botId) {
+    if (!loading && props.open) {
       await nextTick();
       search.value?.focus();
     }
@@ -116,51 +91,18 @@ function onBackdrop(event: MouseEvent) {
       <header class="add-head">
         <div>
           <h2 id="add-title">为某个群单独设置</h2>
-          <p id="add-desc">选择机器人和它所在的群。添加后只需改动不同的项目，其余跟随默认规则。</p>
+          <p id="add-desc">{{ botLabel }} · 选择一个群，其余项目跟随默认规则。</p>
         </div>
         <button type="button" class="icon-close" aria-label="关闭" @click="emit('close')">
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </header>
 
-      <div class="add-body">
-        <section class="bot-pane" aria-labelledby="bot-pane-title">
-          <div class="pane-head">
-            <h3 id="bot-pane-title">机器人</h3>
-            <button type="button" class="link" :disabled="adaptersLoading" @click="emit('refresh-adapters')">刷新</button>
-          </div>
-          <ul class="bot-list">
-            <li v-for="adapter in adapters" :key="adapter.identity!.id">
-              <button
-                type="button"
-                class="bot-card"
-                :aria-pressed="adapter.identity?.id === botId"
-                :disabled="!usableBot(adapter)"
-                @click="emit('choose-bot', adapter.identity!.id)"
-              >
-                <Avatar :src="botAvatar(adapter)" :label="botName(adapter)" :seed="adapter.identity!.id" size="lg" />
-                <span class="bot-text">
-                  <span class="bot-name">{{ botName(adapter) }}</span>
-                  <span class="bot-id">{{ adapter.identity ? `QQ ${adapter.identity.id}` : "身份未确认" }}</span>
-                  <span class="bot-meta">
-                    <i class="state-dot" :class="botState(adapter).tone" aria-hidden="true"></i>{{ botState(adapter).label }}
-                  </span>
-                </span>
-                <svg v-if="adapter.identity?.id === botId" class="i check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
-              </button>
-            </li>
-          </ul>
-          <p v-if="adaptersLoading" class="pane-note" role="status">正在读取机器人…</p>
-          <p v-else-if="adapterStatus" class="pane-note" role="status">{{ adapterStatus }}</p>
-          <p v-else-if="!adapters.length" class="pane-note">
-            还没有 OneBot11 机器人。先在宿主的协议页面添加并连接机器人。
-          </p>
-        </section>
-
+      <div class="add-body account-groups">
         <section class="group-pane" aria-labelledby="group-pane-title">
           <div class="pane-head">
             <h3 id="group-pane-title">
-              群<span v-if="botId && !groupsLoading" class="count">{{ groups.length }}</span>
+              群<span v-if="!groupsLoading" class="count">{{ groups.length }}</span>
             </h3>
             <label class="find">
               <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></svg>
@@ -172,13 +114,12 @@ function onBackdrop(event: MouseEvent) {
                 type="search"
                 placeholder="群名或群号"
                 autocomplete="off"
-                :disabled="!botId || groupsLoading"
+                :disabled="groupsLoading"
               />
             </label>
           </div>
           <div class="group-scroll">
-            <p v-if="!botId" class="pane-empty">先在左侧选择机器人。</p>
-            <ul v-else-if="groupsLoading" class="group-grid" aria-hidden="true">
+            <ul v-if="groupsLoading" class="group-grid" aria-hidden="true">
               <li v-for="n in 8" :key="n" class="group-card skeleton"><span class="avatar"></span><span class="bars"><i></i><i></i></span></li>
             </ul>
             <template v-else>
@@ -212,11 +153,11 @@ function onBackdrop(event: MouseEvent) {
 
       <footer class="add-foot">
         <div class="pick" aria-live="polite">
-          <template v-if="picked && bot">
+          <template v-if="picked">
             <Avatar :src="groupAvatar(picked.target_id)" :label="picked.target_name" :seed="picked.target_id" size="sm" />
             <span class="pick-text">
               <b>{{ picked.target_name }}</b>
-              <small>群号 {{ picked.target_id }} · 机器人 {{ botName(bot) }}</small>
+              <small>群号 {{ picked.target_id }} · 机器人 {{ botLabel }}</small>
             </span>
           </template>
           <span v-else class="hint">选择一个群；双击可直接添加。</span>

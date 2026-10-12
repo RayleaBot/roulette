@@ -24,6 +24,8 @@ type peer struct {
 	fail        map[string]string
 	deadline    time.Duration
 	config      Config
+	stored      map[string]any
+	concurrency int
 }
 
 func newPeer(t *testing.T, h *Handler, c Config, customize func(*peer)) *peer {
@@ -31,7 +33,7 @@ func newPeer(t *testing.T, h *Handler, c Config, customize func(*peer)) *peer {
 	input, inputWriter := io.Pipe()
 	outputReader, output := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &peer{t: t, encoder: json.NewEncoder(inputWriter), roles: map[string]string{"9001": "admin", "9002": "admin", "2001": "member", "2002": "member", "3001": "admin"}, fail: map[string]string{}, deadline: 900 * time.Second, config: c}
+	p := &peer{t: t, encoder: json.NewEncoder(inputWriter), roles: map[string]string{"9001": "admin", "9002": "admin", "2001": "member", "2002": "member", "3001": "admin"}, fail: map[string]string{}, deadline: 900 * time.Second, config: c, stored: c.Values(), concurrency: 1}
 	if customize != nil {
 		customize(p)
 	}
@@ -66,7 +68,7 @@ func newPeer(t *testing.T, h *Handler, c Config, customize func(*peer)) *peer {
 			t.Error("runtime failed to stop")
 		}
 	})
-	p.write(map[string]any{"type": "init", "request_id": "init", "protocol_version": rayleabot.ProtocolVersion, "plugin_id": "raylea.roulette", "timezone": "Asia/Shanghai", "concurrency": 1, "config": c.Values(), "super_admins": []string{"9999"}, "command_prefixes": []string{"/"}, "bots": []any{bot("a", "9001"), bot("b", "9002")}})
+	p.write(map[string]any{"type": "init", "request_id": "init", "protocol_version": rayleabot.ProtocolVersion, "plugin_id": "raylea.roulette", "timezone": "Asia/Shanghai", "concurrency": p.concurrency, "config": p.stored, "super_admins": []string{"9999"}, "command_prefixes": []string{"/"}, "bots": []any{bot("a", "9001"), bot("b", "9002")}})
 	p.until(func(frames []map[string]any) bool { return len(frames) > 0 && frames[0]["type"] == "init_ack" })
 	return p
 }
@@ -85,6 +87,11 @@ func (p *peer) answer(f map[string]any) {
 	code := p.fail[action]
 	role := p.roles[stringValue(data["user_id"])]
 	deadline := p.deadline
+	if action == "config.write" && (code == "" || code == "plugin.settings_apply_failed") {
+		for key, value := range data["values"].(map[string]any) {
+			p.stored[key] = value
+		}
+	}
 	p.mu.Unlock()
 	if code != "" {
 		details := map[string]any{}
@@ -114,6 +121,9 @@ func (p *peer) event(id, eventType, adapter, group, user, command string, payloa
 	source := "onebot11"
 	if eventType != "message.group" {
 		source = "platform"
+	}
+	if eventType == "management.action" {
+		source = "management"
 	}
 	p.write(map[string]any{"type": "event", "request_id": id, "deadline_at_ms": time.Now().Add(5 * time.Second).UnixMilli(), "event": map[string]any{"event_id": id, "event_type": eventType, "source_protocol": source, "source_adapter": adapter, "timestamp": time.Now().UnixMilli(), "actor": map[string]any{"id": user}, "target": map[string]any{"type": "group", "id": group}, "payload": payload}})
 }
@@ -336,7 +346,7 @@ func TestSettingsSaveValidatesBeforeWritingAndPreservesApplyError(t *testing.T) 
 					p.fail["config.write"] = "plugin.settings_apply_failed"
 				}
 			})
-			values := Defaults().Values()
+			values := globalValues(Defaults())
 			if mode == "invalid" {
 				values["rules"].(map[string]any)["bullets"] = 100
 			}

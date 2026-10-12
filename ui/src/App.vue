@@ -5,6 +5,8 @@ import ScopeList from "./ScopeList.vue";
 import ReplayPane from "./ReplayPane.vue";
 import RuleInspector from "./RuleInspector.vue";
 import AddGroupPanel from "./AddGroupPanel.vue";
+import HistoryPanel from "./HistoryPanel.vue";
+import ReplyOverrides from "./ReplyOverrides.vue";
 import {
   clone,
   defaults,
@@ -14,7 +16,6 @@ import {
   issueLabel,
   normalize,
   validate,
-  type Adapter,
   type Group,
   type GroupOverride,
   type ReplyKey,
@@ -30,9 +31,14 @@ import {
   type Scenario,
   type TimeoutEnding,
 } from "./replay";
-import { accountName, botAccounts, usableBot } from "./identity";
+import { accountLabel } from "./identity";
 
 const host = usePluginHost();
+const accountPage = computed(() => host.page.value?.scope === "bot_account");
+const unsupported = computed(() => accountPage.value && host.bot.value?.source_protocol !== "onebot11");
+const historyOpen = ref(false);
+const historyPending = ref(false);
+const botLabel = computed(() => host.bot.value ? accountLabel(host.bot.value) : "");
 const draft = ref<Settings>(defaults());
 const snapshot = ref("");
 const loaded = ref(false);
@@ -40,12 +46,7 @@ const busy = ref(false);
 const status = ref("正在读取设置…");
 const statusError = ref(false);
 const pendingApply = ref(false);
-const adapters = ref<Adapter[]>([]);
-const bots = computed(() => botAccounts(adapters.value));
 const groups = ref<Group[]>([]);
-const botID = ref("");
-const adaptersLoading = ref(false);
-const adapterStatus = ref("");
 const selected = ref(-1);
 const filter = ref("");
 const groupStatus = ref("");
@@ -76,9 +77,6 @@ const selectedGroup = computed<GroupOverride | undefined>(
 const scope = computed(() => effective(draft.value, selectedGroup.value));
 const prefix = computed(() =>
   selectedGroup.value ? `group_overrides.${selected.value}.` : "",
-);
-const selectedBot = computed(() =>
-  bots.value.find((a) => a.identity?.id === botID.value),
 );
 const values = computed(() => sampleValues(scope.value.rules, sample.value));
 const replayIssue = computed(() =>
@@ -169,7 +167,7 @@ function setStatus(message: string, error = false) {
 }
 function apply(values: Record<string, unknown>) {
   const previous = selectedGroup.value ? groupKey(selectedGroup.value) : "";
-  draft.value = normalize(values, adapters.value);
+  draft.value = normalize(values);
   snapshot.value = JSON.stringify(normalize(values));
   loaded.value = true;
   selected.value = previous
@@ -206,70 +204,45 @@ async function loadLimits() {
       "暂时无法读取运行限制；开局时会核对容量和等待期限，不足时不会开局。";
   }
 }
-async function loadAdapters() {
-  adaptersLoading.value = true;
-  adapterStatus.value = "";
-  try {
-    const result = await host.client.apiRequest<{ adapters: Adapter[] }>(
-      "GET",
-      "/api/adapters",
-    );
-    if (disposed) return;
-    adapters.value = result.adapters.filter((a) => a.protocol === "onebot11");
-    adapterStatus.value =
-      bots.value.some(usableBot)
-        ? ""
-        : "暂无身份已确认的机器人；已保存的群设置仍可编辑。";
-  } catch (error) {
-    adapterStatus.value = `读取机器人失败：${message(error)}`;
-  } finally {
-    adaptersLoading.value = false;
-  }
-}
 async function loadGroups() {
   const version = ++groupRequest;
   groups.value = [];
-  if (!selectedBot.value || !usableBot(selectedBot.value)) {
-    groupStatus.value = "";
-    groupsLoading.value = false;
-    return;
-  }
   groupsLoading.value = true;
   groupStatus.value = "正在读取群列表…";
   try {
+    const bot = await host.refreshBot();
+    if (bot.state !== "online" || !bot.adapter_id) {
+      groupStatus.value = "账号未连接，暂不能查询群列表；已保存的群覆盖仍可编辑。";
+      return;
+    }
     const result = await host.client.apiRequest<{
       available: boolean;
       groups: Group[];
       issues: Array<{ message: string }>;
-    }>(
-      "GET",
-      `/api/adapters/${encodeURIComponent(selectedBot.value.id)}/onebot11/targets`,
-    );
+    }>("GET", `/api/adapters/${encodeURIComponent(bot.adapter_id)}/onebot11/targets`);
+    const current = await host.refreshBot();
     if (version !== groupRequest || disposed) return;
+    if (current.state !== "online" || current.adapter_id !== bot.adapter_id || current.bot_id !== bot.bot_id) {
+      groupStatus.value = "账号连接已变化，请重新读取群列表。";
+      return;
+    }
+    if (!result.available) {
+      groupStatus.value = result.issues.map((i) => i.message).join("；") || "群列表暂不可用。";
+      return;
+    }
     groups.value = result.groups;
-    groupStatus.value =
-      result.issues.map((i) => i.message).join("；") ||
-      (groups.value.length ? "" : "这个机器人暂无可用群组。");
+    groupStatus.value = result.issues.map((i) => i.message).join("；") ||
+      (groups.value.length ? "" : "当前账号暂无可用群组。");
   } catch (error) {
-    if (version === groupRequest)
+    if (version === groupRequest && !disposed)
       groupStatus.value = `读取群列表失败：${message(error)}`;
   } finally {
     if (version === groupRequest) groupsLoading.value = false;
   }
 }
-function chooseBot(id: string) {
-  if (id === botID.value && (groups.value.length || groupsLoading.value))
-    return;
-  botID.value = id;
-  void loadGroups();
-}
-// Opening the panel picks the only usable bot so its groups show at once.
-async function openAdd() {
+function openAdd() {
   addOpen.value = true;
-  if (!adapters.value.length && !adaptersLoading.value) await loadAdapters();
-  const usable = bots.value.filter(usableBot);
-  if (addOpen.value && !botID.value && usable.length === 1)
-    chooseBot(usable[0].identity!.id);
+  void loadGroups();
 }
 async function closeAdd() {
   addOpen.value = false;
@@ -281,12 +254,11 @@ function openExisting(index: number) {
   void closeAdd();
 }
 function addGroup(targetId: string) {
-  const adapter = selectedBot.value,
-    group = groups.value.find((g) => g.target_id === targetId);
-  if (!adapter?.identity || !group)
+  const group = groups.value.find((g) => g.target_id === targetId);
+  if (!group)
     return;
   const entry: GroupOverride = {
-    bot_id: adapter.identity.id,
+    bot_id: host.bot.value!.bot_id,
     group_id: group.target_id,
     group_name: group.target_name,
     rules: {},
@@ -299,12 +271,6 @@ function addGroup(targetId: string) {
   if (existing >= 0) {
     selected.value = existing;
     setStatus("这个群已经单独设置过，已为你打开。");
-    return;
-  }
-  const pending = selectedGroup.value;
-  if (pending && !pending.bot_id && pending.group_id === entry.group_id) {
-    pending.bot_id = entry.bot_id;
-    setStatus("账号已绑定，原有设置已保留，保存后生效。");
     return;
   }
   if (draft.value.group_overrides.length >= 500) return;
@@ -381,6 +347,8 @@ async function jump(field: string) {
     field === "trigger_commands"
       ? document.getElementById("trigger-input")
       : document.getElementById(field);
+  const details = target?.closest("details");
+  if (details) details.open = true;
   target?.focus();
 }
 async function ask(kind: "reset" | "reload") {
@@ -402,7 +370,7 @@ async function reload() {
   confirming.value = null;
   busy.value = true;
   try {
-    apply((await host.client.reloadSettings()).config);
+    await readSettings();
     setStatus(
       pendingApply.value
         ? "已读取保存值；此前的应用失败仍需重试应用。"
@@ -418,7 +386,8 @@ async function reload() {
 }
 function reset() {
   confirming.value = null;
-  draft.value = defaults();
+  if (accountPage.value) draft.value.group_overrides = [];
+  else draft.value = defaults();
   selected.value = -1;
   setStatus("插件默认值已载入草稿，保存后生效。");
 }
@@ -430,9 +399,12 @@ async function save() {
   busy.value = true;
   setStatus("正在保存…");
   try {
-    const result = await host.client.invokeAction("settings.save", {
-      values: clone(draft.value),
-    });
+    const { group_overrides, ...global } = clone(draft.value);
+    const result = accountPage.value
+      ? await host.client.invokeAction("groups.save", {
+          group_overrides: group_overrides.map(({ bot_id, ...group }) => group),
+        })
+      : await host.client.invokeAction("settings.save", { values: global });
     apply(result.values as Record<string, unknown>);
     pendingApply.value = false;
     setStatus("设置已保存，玩法和台词从下一局生效。");
@@ -452,7 +424,7 @@ async function save() {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (dirty.value || pendingApply.value) {
+  if (dirty.value || pendingApply.value || historyPending.value) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -464,12 +436,14 @@ onBeforeUnmount(() => {
   window.clearTimeout(flashTimer);
   window.removeEventListener("beforeunload", beforeUnload);
 });
+async function readSettings() {
+  const result = await host.client.invokeAction(accountPage.value ? "groups.get" : "settings.get", {});
+  if (!disposed) apply(result.values as Record<string, unknown>);
+}
 void host.ready
-  .then(async (init) => {
-    if (disposed) return;
-    await loadAdapters();
-    if (disposed) return;
-    apply(init.config);
+  .then(async () => {
+    if (disposed || unsupported.value) return;
+    await readSettings();
     setStatus("改动保存后从下一局生效，进行中的对局不受影响。");
     void loadLimits();
   })
@@ -477,42 +451,58 @@ void host.ready
 </script>
 
 <template>
-  <div v-if="!loaded" class="load-state">
+  <div v-if="unsupported" class="load-state">
+    <div class="load-card" role="status">轮盘仅支持 OneBot11 群聊，QQ 官方账号不可用。</div>
+  </div>
+  <div v-else-if="!loaded" class="load-state">
     <div class="load-card" role="status" aria-live="polite">
       <p>{{ status }}</p>
       <button type="button" class="btn" :disabled="busy" @click="reload">重新读取</button>
     </div>
   </div>
-  <div v-else class="app">
+  <div v-else class="app" :class="{ 'history-view': historyOpen }">
     <ScopeList
       v-model:filter="filter"
       :overrides="draft.group_overrides"
       :selected="selected"
-      :adapters="bots"
+      :account-page="accountPage"
+      :bot-label="botLabel"
+      :history-open="historyOpen"
       :busy="busy"
-      @select="selected = $event"
+      @select="selected = $event; historyOpen = false"
+      @history="historyOpen = true"
       @open-add="openAdd"
     />
+    <KeepAlive>
+      <HistoryPanel v-if="historyOpen" :host="host" @pending="historyPending = $event" />
+    </KeepAlive>
     <AddGroupPanel
+      v-if="accountPage"
       :open="addOpen"
-      :adapters="bots"
-      :adapters-loading="adaptersLoading"
-      :adapter-status="adapterStatus"
-      :bot-id="botID"
+      :bot-label="botLabel"
       :groups="groups"
       :groups-loading="groupsLoading"
       :group-status="groupStatus"
       :overrides="draft.group_overrides"
-      :full="draft.group_overrides.length >= 500 && (!selectedGroup || !!selectedGroup.bot_id)"
+      :full="draft.group_overrides.length >= 500"
       :busy="busy"
       @close="closeAdd"
-      @choose-bot="chooseBot"
       @add="addGroup"
       @open="openExisting"
-      @refresh-adapters="loadAdapters"
       @reload-groups="loadGroups"
     />
+    <ReplyOverrides
+      v-if="accountPage"
+      :group="selectedGroup"
+      :defaults="draft.replies"
+      :prefix="prefix"
+      :issues="issues"
+      :busy="busy"
+      @reply="setReply"
+      @own="ownReply"
+    />
     <ReplayPane
+      v-else-if="!historyOpen"
       v-model:scenario="scenario"
       v-model:ending="ending"
       :lines="lines"
@@ -534,12 +524,13 @@ void host.ready
       @own="ownReply"
       @reset="resetReply"
     />
-    <aside class="inspector" aria-label="规则与保存">
-      <fieldset class="plain" :disabled="busy">
+    <aside v-if="!historyOpen" class="inspector" aria-label="规则与保存">
+      <p v-if="accountPage && !selectedGroup" class="pane-note">全局默认值（只读），在轮盘设置页修改。</p>
+      <fieldset class="plain" :disabled="busy || (accountPage && !selectedGroup)">
         <RuleInspector
           :key="prefix"
           :group="selectedGroup"
-          :bot-label="accountName(selectedGroup?.bot_id ?? '', bots)"
+          :bot-label="botLabel"
           :rules="scope.rules"
           :global-rules="draft.rules"
           :prefix="prefix"
@@ -584,7 +575,7 @@ void host.ready
           <p id="confirm-text">
             {{
               confirming === "reset"
-                ? "把默认规则、台词和所有群的单独设置恢复为插件默认值？只改草稿，保存后才生效。"
+                ? accountPage ? "清除当前账号的群覆盖？保存后生效。" : "恢复全局默认规则与台词？保存后生效。"
                 : "重新读取会丢弃未保存的更改。"
             }}
           </p>

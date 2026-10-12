@@ -1,16 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import App from "../src/App.vue";
-import { defaults, effective, groupKey, normalize, validate, type Adapter } from "../src/model";
-import { botAccounts } from "../src/identity";
+import { defaults, effective, normalize, validate } from "../src/model";
+import type { BotAccount } from "@rayleabot/plugin-ui";
 import { buildReplay, sampleValues, middleSample } from "../src/replay";
 
 let wrapper: VueWrapper | undefined;
 let saved = defaults();
 let failSave = "";
+let directory: BotAccount[];
+let directoryFailure = false;
+let targetHook: (() => void) | undefined;
 const writes: Array<Record<string, unknown>> = [];
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/plugin-ui/raylea.roulette/index.html?page=settings");
+  directory = [{ source_protocol: "onebot11", bot_id: "9001", nickname: "示例机器人", state: "online", adapter_id: "a", last_seen_at: "" }];
+  directoryFailure = false;
+  targetHook = undefined;
   saved = defaults();
   failSave = "";
   writes.length = 0;
@@ -26,6 +33,7 @@ beforeEach(() => {
             name: "轮盘",
             version: "0.1.0",
             state: "running",
+            management_ui: { pages: [{ id: "settings", scope: "global" }, { id: "groups", scope: "bot_account" }] },
           },
         };
       else if (path.endsWith("/settings")) body = { values: saved };
@@ -39,48 +47,45 @@ beforeEach(() => {
             },
           },
         };
-      else if (path === "/api/adapters")
-        body = {
-          adapters: [
-            {
-              id: "a",
-              display_name: "测试机器人",
-              protocol: "onebot11",
-              enabled: true,
-              state: "connected",
-              identity: { id: "9001", name: "测试" },
-            },
-          ],
-        };
-      else if (path.endsWith("/targets"))
-        body = {
-          available: true,
-          groups: [{ target_id: "1001", target_name: "测试群" }],
-          issues: [],
-        };
-      else if (path.endsWith("/management/actions")) {
-        const request = JSON.parse(String(options?.body)) as {
-          action: string;
-          payload: { values: typeof saved };
-        };
-        writes.push(request);
-        if (failSave) {
+      else if (path.startsWith("/api/bot-accounts?")) {
+        const cursor = Number(new URL(path, window.location.origin).searchParams.get("cursor") || "0");
+        body = { items: directory.filter(a => a.source_protocol === "onebot11").slice(cursor, cursor + 100), ...(directory.length > cursor + 100 ? { next_cursor: String(cursor + 100) } : {}) };
+      } else if (path.startsWith("/api/bot-accounts/")) {
+        const parts = path.split("/");
+        const account = directory.find(a => a.source_protocol === parts[3] && a.bot_id === parts[4]);
+        status = directoryFailure ? 500 : account ? 200 : 404;
+        body = status === 200 ? { ...account } : { error: { code: "platform.resource_not_found", message: "directory failure" } };
+      } else if (path.endsWith("/targets")) {
+        targetHook?.();
+        body = { available: true, groups: [{ target_id: "1001", target_name: "测试群" }], issues: [] };
+      } else if (path.endsWith("/management/actions")) {
+        const request = JSON.parse(String(options?.body));
+        const { action, payload, bot } = request;
+        const global = () => { const { group_overrides, ...values } = saved; return values; };
+        const own = () => ({ ...global(), group_overrides: saved.group_overrides.filter(g => g.bot_id === bot.bot_id) });
+        if (action.endsWith(".save") || action === "history.delete" || action === "history.bind" || action === "history.retry") writes.push(request);
+        if (failSave && writes.at(-1) === request) {
           status = 500;
-          body = {
-            error: {
-              code: failSave,
-              message: "模拟保存失败",
-              details:
-                failSave === "plugin.settings_apply_failed"
-                  ? { committed: true }
-                  : {},
-            },
-          };
-        } else {
-          saved = request.payload.values;
-          body = { result: { values: saved } };
-        }
-      }
+          body = { error: { code: failSave, message: "模拟保存失败", details: failSave === "plugin.settings_apply_failed" ? { committed: true } : {} } };
+        } else if (action === "settings.get") body = { result: { values: global() } };
+        else if (action === "groups.get") body = { result: { values: own() } };
+        else if (action === "settings.save") {
+          saved = { ...saved, ...payload.values };
+          body = { result: { values: global() } };
+        } else if (action === "groups.save") {
+          saved.group_overrides = [...saved.group_overrides.filter(g => g.bot_id !== bot.bot_id), ...payload.group_overrides.map((g: Record<string, unknown>) => ({ ...g, bot_id: bot.bot_id }))];
+          body = { result: { values: own() } };
+        } else if (action === "history.list") {
+          body = { result: { total: saved.group_overrides.length, records: saved.group_overrides.map((g, i) => ({ id: String(i), source_protocol: "onebot11", override: g })) } };
+        } else if (action === "history.bind") {
+          saved.group_overrides[Number(payload.id)].bot_id = bot.bot_id;
+          body = { result: { saved: true } };
+        } else if (action === "history.delete") {
+          saved.group_overrides.splice(Number(payload.id), 1);
+          body = { result: { saved: true } };
+        } else if (action === "history.retry") body = { result: { saved: true } };
+        else throw new Error(`Unexpected action ${action}`);
+      } else throw new Error(`Unexpected fetch ${path}`);
       return new Response(JSON.stringify(body), {
         status,
         headers: {
@@ -99,7 +104,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function page() {
+async function page(mode = "settings", id = "9001", protocol = "onebot11") {
+  if (mode === "groups") window.history.replaceState({}, "", `?page=groups&bot=${protocol}:${id}`);
   wrapper = mount(App, { attachTo: document.body });
   await flushPromises();
   return wrapper;
@@ -184,7 +190,7 @@ describe("settings behavior", () => {
     expect(writes).toHaveLength(3);
   });
   it("adds a bot-scoped group, overrides one rule unit, and restores inheritance", async () => {
-    const w = await page();
+    const w = await page("groups");
     await addGroup();
     const chambers = 'input[id="group_overrides.0.rules.chambers"]';
     expect(w.find(chambers).exists()).toBe(false);
@@ -210,13 +216,13 @@ describe("settings behavior", () => {
     await flushPromises();
     expect(saved.group_overrides).toEqual([]);
   });
-  it("edits a group-only reply from the replay without touching the default", async () => {
-    const w = await page();
+  it("edits a group-only reply without touching the default", async () => {
+    const w = await page("groups");
     await addGroup();
-    await w.get('[aria-label="编辑命中并禁言台词"]').trigger("click");
-    const text = w.get("#reply-hit");
+    const editor = w.findAll(".reply-overrides details").find(d => d.text().includes("命中并禁言"))!;
+    const text = editor.get("textarea");
     expect(text.attributes("disabled")).toBeDefined();
-    await w.get('.editor [role="switch"]').trigger("click");
+    await editor.get(".link").trigger("click");
     await text.setValue("<target> 中弹。");
     await button("保存设置").trigger("click");
     await flushPromises();
@@ -234,28 +240,27 @@ describe("settings behavior", () => {
 });
 
 describe("add group panel", () => {
-  it("rebinds an unresolved legacy group without losing its overrides", async () => {
+  it("binds unresolved history through a host-validated account envelope", async () => {
     saved.group_overrides = [{ bot_id: "", group_id: "1001", rules: { mute_seconds: 42 }, replies: { miss: "kept" } }];
     const w = await page();
-    await w.get(".scope-groups .scope").trigger("click");
-    await addGroup();
-    await button("保存设置").trigger("click");
+    await button("历史数据与归属").trigger("click");
     await flushPromises();
-    expect(saved.group_overrides).toEqual([{ bot_id: "9001", group_id: "1001", group_name: "", rules: { mute_seconds: 42 }, replies: { miss: "kept" } }]);
+    await w.get(".history-actions select").setValue("9001");
+    await button("绑定账号").trigger("click");
+    await button("确认绑定").trigger("click");
+    await flushPromises();
+    expect(writes[0]).toMatchObject({ action: "history.bind", page_id: "groups", bot: { source_protocol: "onebot11", bot_id: "9001" }, payload: { id: "0" } });
+    expect(saved.group_overrides[0]).toMatchObject({ bot_id: "9001", rules: { mute_seconds: 42 }, replies: { miss: "kept" } });
   });
-  it("shows QQ avatars for the only bot and its groups", async () => {
-    const w = await page();
+  it("queries the current account directly without selecting a robot", async () => {
+    const w = await page("groups");
     await openPanel();
-    expect(w.get(".bot-card").attributes("aria-pressed")).toBe("true");
-    expect(w.get(".bot-card img").attributes("src")).toBe(
-      "https://q1.qlogo.cn/g?b=qq&nk=9001&s=100",
-    );
-    expect(w.get(".group-card img").attributes("src")).toBe(
-      "https://p.qlogo.cn/gh/1001/1001/100",
-    );
+    expect(w.find(".bot-card").exists()).toBe(false);
+    expect(w.get(".group-card img").attributes("src")).toBe("https://p.qlogo.cn/gh/1001/1001/100");
+    expect(vi.mocked(fetch).mock.calls.filter(([path]) => String(path).startsWith("/api/bot-accounts/"))).toHaveLength(3);
   });
   it("opens an existing group instead of adding it twice", async () => {
-    const w = await page();
+    const w = await page("groups");
     await addGroup();
     await w.get(".scope-nav > button.scope").trigger("click");
     await openPanel();
@@ -269,24 +274,148 @@ describe("add group panel", () => {
   });
 });
 
-describe("effective rules", () => {
-  it("deduplicates account connections and migrates old identities without using adapters as keys", () => {
-    const adapters: Adapter[] = [
-      { id: "old", protocol: "onebot11", display_name: "old", enabled: true, state: "stopped", identity: { id: "9001", name: "" } },
-      { id: "new", protocol: "onebot11", display_name: "new", enabled: true, state: "connected", identity: { id: "9001", name: "bot" } },
-      { id: "official", protocol: "qqofficial", display_name: "official", enabled: true, state: "connected", identity: { id: "9002", name: "" } },
+describe("account page isolation", () => {
+  it("only edits the selected account and sends no ownership or global settings in business data", async () => {
+    saved.group_overrides = [
+      { bot_id: "9001", group_id: "1001", group_name: "账号 A 的群", rules: {}, replies: {} },
+      { bot_id: "9002", group_id: "1002", group_name: "账号 B 的群", rules: {}, replies: {} },
+      { bot_id: "", group_id: "1003", group_name: "旧记录", rules: {}, replies: {} },
     ];
-    expect(botAccounts(adapters).map((a) => a.id)).toEqual(["new"]);
-    const s = normalize({ group_overrides: [
-      { source_adapter: "old", group_id: "1001", rules: { mute_seconds: 42 } },
-      { source_adapter: "new", bot_id: "9001", group_id: "1001" },
-      { source_adapter: "official", group_id: "1002" },
-    ] }, adapters);
-    expect(s.group_overrides[0].bot_id).toBe("9001");
-    expect(s.group_overrides[0]).not.toHaveProperty("source_adapter");
-    expect(groupKey(s.group_overrides[0])).toBe(groupKey(s.group_overrides[1]));
-    expect(s.group_overrides[2].bot_id).toBe("");
-    expect(validate(s).filter((i) => i.field.startsWith("group_overrides"))).toHaveLength(2);
+    const w = await page("groups");
+    expect(w.text()).not.toContain("账号 B 的群");
+    expect(w.text()).not.toContain("旧记录");
+    expect(w.findComponent({ name: "ReplayPane" }).exists()).toBe(false);
+    expect(w.get("fieldset").attributes("disabled")).toBeDefined();
+    await w.get(".scope-groups .scope").trigger("click");
+    await row("弹膛").get(".row-scope .link").trigger("click");
+    await w.get('input[id="group_overrides.0.rules.chambers"]').setValue(5);
+    await button("保存设置").trigger("click");
+    await flushPromises();
+    expect(writes[0]).toMatchObject({ action: "groups.save", page_id: "groups", bot: { source_protocol: "onebot11", bot_id: "9001" } });
+    const payload = writes[0].payload as Record<string, unknown>;
+    expect(Object.keys(payload)).toEqual(["group_overrides"]);
+    expect((payload.group_overrides as object[])[0]).not.toHaveProperty("bot_id");
+    expect(saved.group_overrides).toHaveLength(3);
+    expect(saved.rules).toEqual(defaults().rules);
+    expect(saved.group_overrides.find(g => g.bot_id === "9002")!.rules).toEqual({});
+  });
+
+  it("global saves preserve every account and unresolved history", async () => {
+    saved.group_overrides = [{ bot_id: "", group_id: "1001", rules: {}, replies: {} }];
+    const w = await page();
+    expect(w.find("#add-trigger").exists()).toBe(false);
+    await addTrigger("开枪");
+    await button("保存设置").trigger("click");
+    await flushPromises();
+    expect(writes[0].payload).not.toHaveProperty("values.group_overrides");
+    expect(saved.group_overrides).toHaveLength(1);
+  });
+
+  it("allows saved overrides to be edited without an online connection", async () => {
+    directory[0].state = "no_connection";
+    delete directory[0].adapter_id;
+    saved.group_overrides = [{ bot_id: "9001", group_id: "1001", rules: {}, replies: {} }];
+    const w = await page("groups");
+    await openPanel();
+    expect(w.text()).toContain("暂不能查询群列表");
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).endsWith("/targets"))).toBe(false);
+    await button("取消").trigger("click");
+    await w.get(".scope-groups .scope").trigger("click");
+    await row("弹膛").get(".row-scope .link").trigger("click");
+    await button("保存设置").trigger("click");
+    await flushPromises();
+    expect(saved.group_overrides[0].rules.chambers).toBe(6);
+  });
+
+  it("discards target results if the connection changes during the query", async () => {
+    const w = await page("groups");
+    targetHook = () => { directory[0].adapter_id = "new-connection"; };
+    await openPanel();
+    expect(w.find(".group-card").exists()).toBe(false);
+    expect(w.text()).toContain("账号连接已变化");
+    expect(saved.group_overrides).toEqual([]);
+  });
+
+  it("does not query or edit OneBot settings for QQ official accounts", async () => {
+    directory.push({ source_protocol: "qqofficial", bot_id: "official-id", state: "online", adapter_id: "qq", last_seen_at: "" });
+    const w = await page("groups", "official-id", "qqofficial");
+    expect(w.text()).toContain("QQ 官方账号不可用");
+    expect(w.find(".savebox").exists()).toBe(false);
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).endsWith("/management/actions") || String(path).endsWith("/targets"))).toBe(false);
+  });
+
+  it("loads a fresh draft when the host switches accounts", async () => {
+    directory.push({ ...directory[0], bot_id: "9002", adapter_id: "b" });
+    saved.group_overrides = [{ bot_id: "9002", group_id: "1002", group_name: "账号 B 的群", rules: {}, replies: {} }];
+    await page("groups");
+    await addGroup();
+    wrapper!.unmount();
+    const w = await page("groups", "9002");
+    expect(w.findAll(".scope-groups li")).toHaveLength(1);
+    expect(w.get(".scope-groups").text()).toContain("账号 B 的群");
+    expect(w.get(".scope-groups").text()).not.toContain("测试群");
+    expect(button("保存设置").attributes("disabled")).toBeDefined();
+  });
+});
+
+describe("history directory checks", () => {
+  it("distinguishes missing accounts from lookup failures and never offers reassignment", async () => {
+    saved.group_overrides = [{ bot_id: "9002", group_id: "1002", rules: {}, replies: {} }];
+    const w = await page();
+    directoryFailure = true;
+    await button("历史数据与归属").trigger("click");
+    await flushPromises();
+    expect(w.text()).toContain("账号状态未确认");
+    expect(w.find(".history-actions select").exists()).toBe(false);
+    expect(w.findAll("button").some(b => b.text() === "删除记录")).toBe(false);
+    directoryFailure = false;
+    await button("重新读取历史数据").trigger("click");
+    await flushPromises();
+    expect(w.text()).toContain("账号不在目录中");
+    await button("删除记录").trigger("click");
+    await button("确认删除记录").trigger("click");
+    await flushPromises();
+    expect(saved.group_overrides).toEqual([]);
+  });
+
+  it("loads all directory pages for binding and checks complete accounts individually", async () => {
+    directory = Array.from({ length: 101 }, (_, i) => ({ source_protocol: "onebot11", bot_id: String(9000 + i), state: "no_connection", last_seen_at: "" }));
+    saved.group_overrides = [
+      { bot_id: "", group_id: "1001", rules: {}, replies: {} },
+      { bot_id: "9100", group_id: "1002", group_name: "目录尾页的账号", rules: {}, replies: {} },
+    ];
+    const w = await page();
+    await button("历史数据与归属").trigger("click");
+    await flushPromises();
+    expect(w.get(".history-actions select").findAll("option")).toHaveLength(102);
+    expect(w.findAll(".history-record")).toHaveLength(1);
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => path === "/api/bot-accounts/onebot11/9100")).toBe(true);
+  });
+
+  it("keeps history reachable with an empty directory and retains pending apply on retry", async () => {
+    directory = [];
+    saved.group_overrides = [{ bot_id: "", group_id: "1001", rules: {}, replies: {} }];
+    const w = await page();
+    await button("历史数据与归属").trigger("click");
+    await flushPromises();
+    expect(w.text()).toContain("待绑定账号");
+    failSave = "plugin.settings_apply_failed";
+    await button("删除记录").trigger("click");
+    await button("确认删除记录").trigger("click");
+    await flushPromises();
+    expect(w.text()).toContain("已保存，待应用");
+    failSave = "";
+    await button("重试应用").trigger("click");
+    await flushPromises();
+    expect(writes.at(-1)).toMatchObject({ action: "history.retry", payload: {} });
+  });
+});
+
+describe("effective rules", () => {
+  it("leaves unresolved history unbound in the UI", () => {
+    const s = normalize({ group_overrides: [{ source_adapter: "a", group_id: "1001", rules: { mute_seconds: 42 } }] });
+    expect(s.group_overrides[0].bot_id).toBe("");
+    expect(s.group_overrides[0].rules.mute_seconds).toBe(42);
   });
   it("inherits unselected fields and catches a global change invalidating a group", () => {
     const s = defaults();

@@ -73,6 +73,9 @@
   },
   "management_ui": {
     "entry": "ui/index.html",
-    "pages": [{ "id": "settings", "label": "轮盘设置" }]
+    "pages": [
+      { "id": "settings", "label": "轮盘设置", "scope": "global" },
+      { "id": "groups", "label": "群覆盖", "scope": "bot_account" }
+    ]
   }
 }

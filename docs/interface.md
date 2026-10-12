@@ -30,7 +30,17 @@
 
 ## 管理操作
 
-页面使用现有设置读取接口，保存调用 `invokeAction('settings.save', {values: config})`。后端在一次 `config.write` 前完成全部作用域校验，成功返回 `{values: normalizedConfig}`。不接受其他管理动作。
+管理动作按页面范围划分：
+
+| 动作 | 页面 | 语义 |
+| --- | --- | --- |
+| `settings.get` / `settings.save` | 轮盘设置（全局） | 读取或保存全局设置，`values` 不含 `group_overrides`，带群覆盖的保存被拒绝；成功返回 `{values}` |
+| `groups.get` / `groups.save` | 群覆盖（按机器人账号） | 账号取自宿主核对过的管理事件，只支持 OneBot11；`groups.save` 校验后只替换当前账号的群覆盖，保留其他账号的覆盖与全局设置，全部群覆盖不超过 500 个 |
+| `history.list` / `history.delete` | 轮盘设置（全局） | 列出全部群覆盖记录及其 ID，按 ID 删除单条记录；ID 包含记录位置与内容，记录变化后需重新读取 |
+| `history.bind` | 以群覆盖页的账号发起 | 把缺少 `bot_id` 的记录绑定到宿主核对过的 OneBot11 账号；已有账号的记录不能改挂 |
+| `history.retry` | 轮盘设置（全局） | 重新提交当前群覆盖，用于已保存待应用 |
+
+所有写入在同一把锁内读取插件最近一次提交的配置后合并，排队中的旧配置快照与插件自身写入产生的 `config.changed` 不会覆盖更新的写入。按账号的动作缺少账号、账号与业务参数中的 `bot_id` 不符或协议不是 OneBot11 时，返回 `platform.invalid_request`。
 
 无效设置返回 `platform.invalid_request`，`details.field` 定位配置项。宿主返回的 `plugin.settings_apply_failed` 和 `details.committed` 原样传递，页面保留草稿并提供重试。未知管理动作不产生副作用。
 
