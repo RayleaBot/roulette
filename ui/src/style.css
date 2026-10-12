@@ -487,65 +487,6 @@ svg.i {
   height: 100vh;
   min-height: 520px;
 }
-.app.history-view {
-  grid-template-columns: 288px minmax(0, 1fr);
-}
-.reply-overrides,
-.history-panel {
-  min-width: 0;
-  overflow: auto;
-  padding: 24px 26px;
-  background: var(--panel);
-}
-.reply-overrides summary,
-.history-panel summary {
-  cursor: pointer;
-  margin-bottom: 12px;
-}
-.reply-field {
-  width: 100%;
-  min-height: 100px;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--canvas);
-  color: var(--ink);
-  font: inherit;
-}
-.reply-field:disabled {
-  background: var(--sunken);
-}
-.history-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-.history-actions select {
-  max-width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid var(--control);
-  border-radius: 10px;
-  background: var(--canvas);
-  color: var(--ink);
-  font: inherit;
-}
-.history-record p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.add-body.account-groups {
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (max-width: 1080px) {
-  .app.history-view { grid-template-columns: minmax(0, 1fr); }
-}
-@media (pointer: coarse) {
-  .history-actions select { min-height: 44px; }
-}
 .load-state {
   display: grid;
   place-items: center;
@@ -1529,18 +1470,8 @@ fieldset.plain {
 }
 .add-body {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
-}
-.bot-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-  overflow: auto;
-  padding: 16px 14px;
-  border-right: 1px solid var(--line);
-  background: var(--chat);
 }
 .group-pane {
   display: flex;
@@ -1581,78 +1512,17 @@ fieldset.plain {
   width: 240px;
   margin: 0;
 }
-.bot-list {
-  display: grid;
-  gap: 8px;
-}
-.bot-card {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid transparent;
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow-1);
-  text-align: left;
-}
-.bot-card:not([aria-pressed="true"]):hover:not(:disabled) {
-  border-color: var(--line-strong);
-}
-.bot-card[aria-pressed="true"] {
-  border-color: var(--ink);
-}
-.bot-card:disabled {
-  border-color: var(--line);
-  background: transparent;
-  box-shadow: none;
-  opacity: 0.6;
-}
-.bot-text,
 .group-text,
 .pick-text {
   display: grid;
   min-width: 0;
 }
-.bot-name,
 .group-name,
 .pick-text b {
   overflow: hidden;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.bot-id {
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-.bot-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  color: var(--ink-2);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.bot-meta .state-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-.bot-meta .state-dot.warn {
-  background: var(--warn);
-}
-.bot-meta .state-dot.error {
-  background: var(--danger);
-}
-.bot-card .check {
-  width: 18px;
-  height: 18px;
 }
 .pane-note {
   padding: 8px 6px;
@@ -1842,7 +1712,6 @@ fieldset.plain {
     border: 1px solid CanvasText;
   }
   .scope[aria-current="true"],
-  .bot-card[aria-pressed="true"],
   .group-card[aria-pressed="true"],
   .seg button[aria-pressed="true"],
   .branch button[aria-pressed="true"] {

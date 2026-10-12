@@ -9,16 +9,12 @@ const props = defineProps<{
   overrides: GroupOverride[];
   selected: number;
   filter: string;
-  accountPage: boolean;
-  botLabel: string;
-  historyOpen: boolean;
   busy: boolean;
 }>();
 const emit = defineEmits<{
   select: [index: number];
   "update:filter": [value: string];
   "open-add": [];
-  history: [];
 }>();
 
 const visible = computed(() =>
@@ -36,26 +32,24 @@ const visible = computed(() =>
   <aside class="scopes" aria-label="规则范围">
     <header class="scopes-head">
       <h2>规则范围</h2>
-      <p>{{ accountPage ? botLabel : "全局默认规则与台词。" }}</p>
+      <p>选默认规则或某个群，推演和规则随之切换。</p>
     </header>
     <nav class="scope-nav" aria-label="选择规则范围">
       <button
         type="button"
         class="scope"
-        :aria-current="selected === -1 && !historyOpen ? 'true' : undefined"
+        :aria-current="selected === -1 ? 'true' : undefined"
         @click="emit('select', -1)"
       >
         <span class="avatar bot" aria-hidden="true">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="7.4" r="1.7" /><circle cx="16" cy="9.7" r="1.7" /><circle cx="16" cy="14.3" r="1.7" /><circle cx="12" cy="16.6" r="1.7" /><circle cx="8" cy="14.3" r="1.7" /><circle cx="8" cy="9.7" r="1.7" /></svg>
         </span>
         <span class="scope-text">
-          <span class="scope-name">{{ accountPage ? "全局默认值（只读）" : "默认规则" }}</span>
-          <span class="scope-sub">未单独设置的项目都用这套</span>
+          <span class="scope-name">默认规则</span>
+          <span class="scope-sub">所有账号共用，未单独设置的群都用这套</span>
         </span>
       </button>
 
-      <button v-if="!accountPage" type="button" class="scope" :aria-current="historyOpen ? 'true' : undefined" @click="emit('history')">历史数据与归属</button>
-      <template v-if="accountPage">
       <div class="scope-divider">
         <span>单独设置的群</span><span class="count">{{ overrides.length }}</span>
       </div>
@@ -94,10 +88,9 @@ const visible = computed(() =>
         还没有单独设置的群。某个群想玩得不一样时，再从下面添加。
       </p>
       <p v-else-if="!visible.length" class="scope-empty">没有匹配的群。</p>
-      </template>
     </nav>
 
-    <div v-if="accountPage" class="add">
+    <div class="add">
       <button
         id="add-trigger"
         type="button"

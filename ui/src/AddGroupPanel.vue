@@ -6,7 +6,6 @@ import { groupAvatar } from "./identity";
 
 const props = defineProps<{
   open: boolean;
-  botLabel: string;
   groups: Group[];
   groupsLoading: boolean;
   groupStatus: string;
@@ -91,14 +90,14 @@ function onBackdrop(event: MouseEvent) {
       <header class="add-head">
         <div>
           <h2 id="add-title">为某个群单独设置</h2>
-          <p id="add-desc">{{ botLabel }} · 选择一个群，其余项目跟随默认规则。</p>
+          <p id="add-desc">选择一个群，其余项目跟随默认规则。</p>
         </div>
         <button type="button" class="icon-close" aria-label="关闭" @click="emit('close')">
           <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </header>
 
-      <div class="add-body account-groups">
+      <div class="add-body">
         <section class="group-pane" aria-labelledby="group-pane-title">
           <div class="pane-head">
             <h3 id="group-pane-title">
@@ -157,7 +156,7 @@ function onBackdrop(event: MouseEvent) {
             <Avatar :src="groupAvatar(picked.target_id)" :label="picked.target_name" :seed="picked.target_id" size="sm" />
             <span class="pick-text">
               <b>{{ picked.target_name }}</b>
-              <small>群号 {{ picked.target_id }} · 机器人 {{ botLabel }}</small>
+              <small>群号 {{ picked.target_id }}</small>
             </span>
           </template>
           <span v-else class="hint">选择一个群；双击可直接添加。</span>

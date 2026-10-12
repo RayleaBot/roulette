@@ -25,7 +25,6 @@ import {
 
 const props = defineProps<{
   group?: GroupOverride;
-  botLabel: string;
   rules: Rules;
   globalRules: Rules;
   prefix: string;
@@ -181,9 +180,7 @@ async function cancelRemove() {
           <Avatar :src="groupAvatar(group.group_id)" :label="groupTitle(group)" :seed="group.group_id" />
           <div>
             <h2>{{ groupTitle(group) }}</h2>
-            <p>
-              群 {{ group.group_id }} · 机器人 {{ botLabel }}
-            </p>
+            <p>群 {{ group.group_id }}</p>
           </div>
         </div>
         <button v-if="!confirmRemove" id="ask-remove" type="button" class="btn danger" @click="askRemove">
@@ -192,7 +189,7 @@ async function cancelRemove() {
       </template>
       <div v-else class="inspector-title">
         <h2>默认规则</h2>
-        <p>没有单独设置的群都按这套规则开局。</p>
+        <p>所有账号共用；没有单独设置的群都按这套规则开局。</p>
       </div>
     </header>
     <div

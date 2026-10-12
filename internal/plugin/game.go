@@ -93,21 +93,18 @@ func (h *Handler) Handle(ctx context.Context, event *rayleabot.EventContext) err
 			}
 		}
 		h.mu.Unlock()
-		if _, err := h.loadConfig(ctx, event); err != nil {
-			return err
-		}
 		return event.Result(nil)
 	case "management.action":
 		return h.manage(ctx, event)
 	case "config.changed":
-		if _, err := h.loadConfig(ctx, event); err != nil {
-			return err
-		}
+		h.settingsMu.Lock()
+		h.observeSettingsLocked(event)
+		h.settingsMu.Unlock()
 		return event.Result(nil)
 	}
 	command := event.Event.Command()
 	stop := command == "停止轮盘"
-	config, err := h.loadConfig(ctx, event)
+	config, err := h.loadConfig(event)
 	if stop {
 		config, err = Defaults(), nil
 	}

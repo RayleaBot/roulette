@@ -5,7 +5,3 @@ export const userAvatar = (id: string) =>
 
 export const groupAvatar = (id: string) =>
   `https://p.qlogo.cn/gh/${encodeURIComponent(id)}/${encodeURIComponent(id)}/100`;
-
-export function accountLabel(bot: import("@rayleabot/plugin-ui").BotAccount): string {
-  return bot.nickname ? `${bot.nickname}（${bot.bot_id}）` : bot.bot_id;
-}

@@ -5,8 +5,6 @@ import ScopeList from "./ScopeList.vue";
 import ReplayPane from "./ReplayPane.vue";
 import RuleInspector from "./RuleInspector.vue";
 import AddGroupPanel from "./AddGroupPanel.vue";
-import HistoryPanel from "./HistoryPanel.vue";
-import ReplyOverrides from "./ReplyOverrides.vue";
 import {
   clone,
   defaults,
@@ -31,14 +29,9 @@ import {
   type Scenario,
   type TimeoutEnding,
 } from "./replay";
-import { accountLabel } from "./identity";
 
 const host = usePluginHost();
-const accountPage = computed(() => host.page.value?.scope === "bot_account");
-const unsupported = computed(() => accountPage.value && host.bot.value?.source_protocol !== "onebot11");
-const historyOpen = ref(false);
-const historyPending = ref(false);
-const botLabel = computed(() => host.bot.value ? accountLabel(host.bot.value) : "");
+const unsupported = computed(() => !!host.bot.value && host.bot.value.source_protocol !== "onebot11");
 const draft = ref<Settings>(defaults());
 const snapshot = ref("");
 const loaded = ref(false);
@@ -386,8 +379,7 @@ async function reload() {
 }
 function reset() {
   confirming.value = null;
-  if (accountPage.value) draft.value.group_overrides = [];
-  else draft.value = defaults();
+  draft.value = defaults();
   selected.value = -1;
   setStatus("插件默认值已载入草稿，保存后生效。");
 }
@@ -399,12 +391,9 @@ async function save() {
   busy.value = true;
   setStatus("正在保存…");
   try {
-    const { group_overrides, ...global } = clone(draft.value);
-    const result = accountPage.value
-      ? await host.client.invokeAction("groups.save", {
-          group_overrides: group_overrides.map(({ bot_id, ...group }) => group),
-        })
-      : await host.client.invokeAction("settings.save", { values: global });
+    const result = await host.client.invokeAction("settings.save", {
+      values: clone(draft.value),
+    });
     apply(result.values as Record<string, unknown>);
     pendingApply.value = false;
     setStatus("设置已保存，玩法和台词从下一局生效。");
@@ -424,7 +413,7 @@ async function save() {
   }
 }
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (dirty.value || pendingApply.value || historyPending.value) {
+  if (dirty.value || pendingApply.value) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -437,7 +426,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
 });
 async function readSettings() {
-  const result = await host.client.invokeAction(accountPage.value ? "groups.get" : "settings.get", {});
+  const result = await host.client.invokeAction("settings.get", {});
   if (!disposed) apply(result.values as Record<string, unknown>);
 }
 void host.ready
@@ -460,26 +449,17 @@ void host.ready
       <button type="button" class="btn" :disabled="busy" @click="reload">重新读取</button>
     </div>
   </div>
-  <div v-else class="app" :class="{ 'history-view': historyOpen }">
+  <div v-else class="app">
     <ScopeList
       v-model:filter="filter"
       :overrides="draft.group_overrides"
       :selected="selected"
-      :account-page="accountPage"
-      :bot-label="botLabel"
-      :history-open="historyOpen"
       :busy="busy"
-      @select="selected = $event; historyOpen = false"
-      @history="historyOpen = true"
+      @select="selected = $event"
       @open-add="openAdd"
     />
-    <KeepAlive>
-      <HistoryPanel v-if="historyOpen" :host="host" @pending="historyPending = $event" />
-    </KeepAlive>
     <AddGroupPanel
-      v-if="accountPage"
       :open="addOpen"
-      :bot-label="botLabel"
       :groups="groups"
       :groups-loading="groupsLoading"
       :group-status="groupStatus"
@@ -491,18 +471,7 @@ void host.ready
       @open="openExisting"
       @reload-groups="loadGroups"
     />
-    <ReplyOverrides
-      v-if="accountPage"
-      :group="selectedGroup"
-      :defaults="draft.replies"
-      :prefix="prefix"
-      :issues="issues"
-      :busy="busy"
-      @reply="setReply"
-      @own="ownReply"
-    />
     <ReplayPane
-      v-else-if="!historyOpen"
       v-model:scenario="scenario"
       v-model:ending="ending"
       :lines="lines"
@@ -524,13 +493,11 @@ void host.ready
       @own="ownReply"
       @reset="resetReply"
     />
-    <aside v-if="!historyOpen" class="inspector" aria-label="规则与保存">
-      <p v-if="accountPage && !selectedGroup" class="pane-note">全局默认值（只读），在轮盘设置页修改。</p>
-      <fieldset class="plain" :disabled="busy || (accountPage && !selectedGroup)">
+    <aside class="inspector" aria-label="规则与保存">
+      <fieldset class="plain" :disabled="busy">
         <RuleInspector
           :key="prefix"
           :group="selectedGroup"
-          :bot-label="botLabel"
           :rules="scope.rules"
           :global-rules="draft.rules"
           :prefix="prefix"
@@ -575,7 +542,7 @@ void host.ready
           <p id="confirm-text">
             {{
               confirming === "reset"
-                ? accountPage ? "清除当前账号的群覆盖？保存后生效。" : "恢复全局默认规则与台词？保存后生效。"
+                ? "把所有账号共用的默认规则与台词，以及本账号各群的单独设置恢复为插件默认值？只改草稿，保存后才生效。"
                 : "重新读取会丢弃未保存的更改。"
             }}
           </p>
