@@ -30,7 +30,7 @@ import {
   type Scenario,
   type TimeoutEnding,
 } from "./replay";
-import { usableBot } from "./identity";
+import { accountName, botAccounts, usableBot } from "./identity";
 
 const host = usePluginHost();
 const draft = ref<Settings>(defaults());
@@ -41,8 +41,9 @@ const status = ref("正在读取设置…");
 const statusError = ref(false);
 const pendingApply = ref(false);
 const adapters = ref<Adapter[]>([]);
+const bots = computed(() => botAccounts(adapters.value));
 const groups = ref<Group[]>([]);
-const adapterID = ref("");
+const botID = ref("");
 const adaptersLoading = ref(false);
 const adapterStatus = ref("");
 const selected = ref(-1);
@@ -76,8 +77,8 @@ const scope = computed(() => effective(draft.value, selectedGroup.value));
 const prefix = computed(() =>
   selectedGroup.value ? `group_overrides.${selected.value}.` : "",
 );
-const selectedAdapter = computed(() =>
-  adapters.value.find((a) => a.id === adapterID.value),
+const selectedBot = computed(() =>
+  bots.value.find((a) => a.identity?.id === botID.value),
 );
 const values = computed(() => sampleValues(scope.value.rules, sample.value));
 const replayIssue = computed(() =>
@@ -168,8 +169,8 @@ function setStatus(message: string, error = false) {
 }
 function apply(values: Record<string, unknown>) {
   const previous = selectedGroup.value ? groupKey(selectedGroup.value) : "";
-  draft.value = normalize(values);
-  snapshot.value = JSON.stringify(draft.value);
+  draft.value = normalize(values, adapters.value);
+  snapshot.value = JSON.stringify(normalize(values));
   loaded.value = true;
   selected.value = previous
     ? draft.value.group_overrides.findIndex((g) => groupKey(g) === previous)
@@ -216,7 +217,7 @@ async function loadAdapters() {
     if (disposed) return;
     adapters.value = result.adapters.filter((a) => a.protocol === "onebot11");
     adapterStatus.value =
-      !adapters.value.length || adapters.value.some(usableBot)
+      bots.value.some(usableBot)
         ? ""
         : "暂无身份已确认的机器人；已保存的群设置仍可编辑。";
   } catch (error) {
@@ -228,7 +229,7 @@ async function loadAdapters() {
 async function loadGroups() {
   const version = ++groupRequest;
   groups.value = [];
-  if (!adapterID.value) {
+  if (!selectedBot.value || !usableBot(selectedBot.value)) {
     groupStatus.value = "";
     groupsLoading.value = false;
     return;
@@ -242,7 +243,7 @@ async function loadGroups() {
       issues: Array<{ message: string }>;
     }>(
       "GET",
-      `/api/adapters/${encodeURIComponent(adapterID.value)}/onebot11/targets`,
+      `/api/adapters/${encodeURIComponent(selectedBot.value.id)}/onebot11/targets`,
     );
     if (version !== groupRequest || disposed) return;
     groups.value = result.groups;
@@ -256,19 +257,19 @@ async function loadGroups() {
     if (version === groupRequest) groupsLoading.value = false;
   }
 }
-function chooseAdapter(id: string) {
-  if (id === adapterID.value && (groups.value.length || groupsLoading.value))
+function chooseBot(id: string) {
+  if (id === botID.value && (groups.value.length || groupsLoading.value))
     return;
-  adapterID.value = id;
+  botID.value = id;
   void loadGroups();
 }
 // Opening the panel picks the only usable bot so its groups show at once.
 async function openAdd() {
   addOpen.value = true;
   if (!adapters.value.length && !adaptersLoading.value) await loadAdapters();
-  const usable = adapters.value.filter(usableBot);
-  if (addOpen.value && !adapterID.value && usable.length === 1)
-    chooseAdapter(usable[0].id);
+  const usable = bots.value.filter(usableBot);
+  if (addOpen.value && !botID.value && usable.length === 1)
+    chooseBot(usable[0].identity!.id);
 }
 async function closeAdd() {
   addOpen.value = false;
@@ -280,12 +281,11 @@ function openExisting(index: number) {
   void closeAdd();
 }
 function addGroup(targetId: string) {
-  const adapter = selectedAdapter.value,
+  const adapter = selectedBot.value,
     group = groups.value.find((g) => g.target_id === targetId);
-  if (!adapter?.identity || !group || draft.value.group_overrides.length >= 500)
+  if (!adapter?.identity || !group)
     return;
   const entry: GroupOverride = {
-    source_adapter: adapter.id,
     bot_id: adapter.identity.id,
     group_id: group.target_id,
     group_name: group.target_name,
@@ -301,6 +301,13 @@ function addGroup(targetId: string) {
     setStatus("这个群已经单独设置过，已为你打开。");
     return;
   }
+  const pending = selectedGroup.value;
+  if (pending && !pending.bot_id && pending.group_id === entry.group_id) {
+    pending.bot_id = entry.bot_id;
+    setStatus("账号已绑定，原有设置已保留，保存后生效。");
+    return;
+  }
+  if (draft.value.group_overrides.length >= 500) return;
   draft.value.group_overrides.push(entry);
   selected.value = draft.value.group_overrides.length - 1;
   setStatus(`已把「${groupTitle(entry)}」加入草稿，在右侧改动需要不同的项目，保存后生效。`);
@@ -458,12 +465,13 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", beforeUnload);
 });
 void host.ready
-  .then((init) => {
+  .then(async (init) => {
+    if (disposed) return;
+    await loadAdapters();
     if (disposed) return;
     apply(init.config);
     setStatus("改动保存后从下一局生效，进行中的对局不受影响。");
     void loadLimits();
-    void loadAdapters();
   })
   .catch((error) => setStatus(`设置载入失败：${message(error)}`, true));
 </script>
@@ -480,25 +488,25 @@ void host.ready
       v-model:filter="filter"
       :overrides="draft.group_overrides"
       :selected="selected"
-      :adapters="adapters"
+      :adapters="bots"
       :busy="busy"
       @select="selected = $event"
       @open-add="openAdd"
     />
     <AddGroupPanel
       :open="addOpen"
-      :adapters="adapters"
+      :adapters="bots"
       :adapters-loading="adaptersLoading"
       :adapter-status="adapterStatus"
-      :adapter-id="adapterID"
+      :bot-id="botID"
       :groups="groups"
       :groups-loading="groupsLoading"
       :group-status="groupStatus"
       :overrides="draft.group_overrides"
-      :full="draft.group_overrides.length >= 500"
+      :full="draft.group_overrides.length >= 500 && (!selectedGroup || !!selectedGroup.bot_id)"
       :busy="busy"
       @close="closeAdd"
-      @choose-adapter="chooseAdapter"
+      @choose-bot="chooseBot"
       @add="addGroup"
       @open="openExisting"
       @refresh-adapters="loadAdapters"
@@ -531,6 +539,7 @@ void host.ready
         <RuleInspector
           :key="prefix"
           :group="selectedGroup"
+          :bot-label="accountName(selectedGroup?.bot_id ?? '', bots)"
           :rules="scope.rules"
           :global-rules="draft.rules"
           :prefix="prefix"

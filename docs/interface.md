@@ -11,7 +11,7 @@
 | `replies` | 默认消息文案 |
 | `group_overrides` | 最多 500 个群覆盖 |
 
-每个群覆盖由 `source_adapter`、`bot_id`、`group_id` 唯一确定，协议固定为 OneBot11；可选 `group_name` 仅供展示。`rules` 和 `replies` 只保存显式覆盖的字段，缺少字段表示继承，不用 `null` 表示继承。
+每个群覆盖由 `bot_id`、`group_id` 唯一确定，协议固定为 OneBot11，不绑定连接实例。旧配置中只带 `source_adapter` 的记录在加载时按该连接当前登录的账号补齐 `bot_id` 并去掉 `source_adapter`；补不齐的记录原样保留，管理页显示为待绑定账号，添加同一群时绑定。可选 `group_name` 仅供展示。`rules` 和 `replies` 只保存显式覆盖的字段，缺少字段表示继承，不用 `null` 表示继承。
 
 | 规则 | 说明 |
 | --- | --- |

@@ -36,6 +36,8 @@ type Handler struct {
 	// Fixed stripes bound lock storage even after many groups have played.
 	lanes           [256]sync.Mutex
 	settingsMu      sync.Mutex
+	settingsInput   string
+	settingsConfig  Config
 	identities      map[string]string
 	identitiesKnown bool
 	random          func(int) (int, error)
@@ -91,15 +93,21 @@ func (h *Handler) Handle(ctx context.Context, event *rayleabot.EventContext) err
 			}
 		}
 		h.mu.Unlock()
+		if _, err := h.loadConfig(ctx, event); err != nil {
+			return err
+		}
 		return event.Result(nil)
 	case "management.action":
 		return h.manage(ctx, event)
 	case "config.changed":
+		if _, err := h.loadConfig(ctx, event); err != nil {
+			return err
+		}
 		return event.Result(nil)
 	}
 	command := event.Event.Command()
 	stop := command == "停止轮盘"
-	config, err := ParseConfig(event.Config)
+	config, err := h.loadConfig(ctx, event)
 	if stop {
 		config, err = Defaults(), nil
 	}
@@ -184,7 +192,7 @@ func (h *Handler) chatLocked(ctx context.Context, event *rayleabot.EventContext,
 	}
 	created := r == nil
 	if created {
-		rules, replies := config.ForGroup(event.Event.SourceAdapter, event.Bot.ID, group)
+		rules, replies := config.ForGroup(event.Bot.ID, group)
 		deadline, err := event.Detach(ctx, map[string]any{"handled": true})
 		if err != nil {
 			message := "无法进入后台等待，本次未开局，请稍后重试。"

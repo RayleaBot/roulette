@@ -9,7 +9,7 @@ const props = defineProps<{
   adapters: Adapter[];
   adaptersLoading: boolean;
   adapterStatus: string;
-  adapterId: string;
+  botId: string;
   groups: Group[];
   groupsLoading: boolean;
   groupStatus: string;
@@ -19,7 +19,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
-  "choose-adapter": [id: string];
+  "choose-bot": [id: string];
   add: [targetId: string];
   open: [index: number];
   "refresh-adapters": [];
@@ -31,7 +31,7 @@ const search = ref<HTMLInputElement | null>(null);
 const query = ref("");
 const targetId = ref("");
 
-const bot = computed(() => props.adapters.find((a) => a.id === props.adapterId));
+const bot = computed(() => props.adapters.find((a) => a.identity?.id === props.botId));
 const visible = computed(() => {
   const q = query.value.trim().toLowerCase();
   return q
@@ -39,13 +39,12 @@ const visible = computed(() => {
     : props.groups;
 });
 const picked = computed(() => props.groups.find((g) => g.target_id === targetId.value));
-// Overrides are keyed by instance, bot account and group, so the same group
+// Overrides are keyed by bot account and group, so the same group
 // under another bot is a separate entry.
 const existing = (group: Group) => {
   const identity = bot.value?.identity;
   if (!identity) return -1;
   const key = groupKey({
-    source_adapter: props.adapterId,
     bot_id: identity.id,
     group_id: group.target_id,
     rules: {},
@@ -56,7 +55,7 @@ const existing = (group: Group) => {
 const pickedExisting = computed(() => (picked.value ? existing(picked.value) : -1));
 
 watch(
-  () => props.adapterId,
+  () => props.botId,
   () => {
     query.value = "";
     targetId.value = "";
@@ -79,14 +78,14 @@ watch(
       else el.setAttribute("open", "");
     }
     await nextTick();
-    (props.adapterId ? search.value : el.querySelector<HTMLElement>(".bot-card:not(:disabled)"))?.focus();
+    (props.botId ? search.value : el.querySelector<HTMLElement>(".bot-card:not(:disabled)"))?.focus();
   },
   { flush: "post" },
 );
 watch(
   () => props.groupsLoading,
   async (loading) => {
-    if (!loading && props.open && props.adapterId) {
+    if (!loading && props.open && props.botId) {
       await nextTick();
       search.value?.focus();
     }
@@ -131,23 +130,23 @@ function onBackdrop(event: MouseEvent) {
             <button type="button" class="link" :disabled="adaptersLoading" @click="emit('refresh-adapters')">刷新</button>
           </div>
           <ul class="bot-list">
-            <li v-for="adapter in adapters" :key="adapter.id">
+            <li v-for="adapter in adapters" :key="adapter.identity!.id">
               <button
                 type="button"
                 class="bot-card"
-                :aria-pressed="adapter.id === adapterId"
+                :aria-pressed="adapter.identity?.id === botId"
                 :disabled="!usableBot(adapter)"
-                @click="emit('choose-adapter', adapter.id)"
+                @click="emit('choose-bot', adapter.identity!.id)"
               >
-                <Avatar :src="botAvatar(adapter)" :label="botName(adapter)" :seed="adapter.identity?.id ?? adapter.id" size="lg" />
+                <Avatar :src="botAvatar(adapter)" :label="botName(adapter)" :seed="adapter.identity!.id" size="lg" />
                 <span class="bot-text">
                   <span class="bot-name">{{ botName(adapter) }}</span>
                   <span class="bot-id">{{ adapter.identity ? `QQ ${adapter.identity.id}` : "身份未确认" }}</span>
                   <span class="bot-meta">
-                    <i class="state-dot" :class="botState(adapter).tone" aria-hidden="true"></i>{{ adapter.display_name }} · {{ botState(adapter).label }}
+                    <i class="state-dot" :class="botState(adapter).tone" aria-hidden="true"></i>{{ botState(adapter).label }}
                   </span>
                 </span>
-                <svg v-if="adapter.id === adapterId" class="i check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
+                <svg v-if="adapter.identity?.id === botId" class="i check" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7" /></svg>
               </button>
             </li>
           </ul>
@@ -161,7 +160,7 @@ function onBackdrop(event: MouseEvent) {
         <section class="group-pane" aria-labelledby="group-pane-title">
           <div class="pane-head">
             <h3 id="group-pane-title">
-              群<span v-if="adapterId && !groupsLoading" class="count">{{ groups.length }}</span>
+              群<span v-if="botId && !groupsLoading" class="count">{{ groups.length }}</span>
             </h3>
             <label class="find">
               <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" /></svg>
@@ -173,12 +172,12 @@ function onBackdrop(event: MouseEvent) {
                 type="search"
                 placeholder="群名或群号"
                 autocomplete="off"
-                :disabled="!adapterId || groupsLoading"
+                :disabled="!botId || groupsLoading"
               />
             </label>
           </div>
           <div class="group-scroll">
-            <p v-if="!adapterId" class="pane-empty">先在左侧选择机器人。</p>
+            <p v-if="!botId" class="pane-empty">先在左侧选择机器人。</p>
             <ul v-else-if="groupsLoading" class="group-grid" aria-hidden="true">
               <li v-for="n in 8" :key="n" class="group-card skeleton"><span class="avatar"></span><span class="bars"><i></i><i></i></span></li>
             </ul>
@@ -217,7 +216,7 @@ function onBackdrop(event: MouseEvent) {
             <Avatar :src="groupAvatar(picked.target_id)" :label="picked.target_name" :seed="picked.target_id" size="sm" />
             <span class="pick-text">
               <b>{{ picked.target_name }}</b>
-              <small>群号 {{ picked.target_id }} · 机器人 {{ botName(bot) }}（{{ bot.identity?.id }}）</small>
+              <small>群号 {{ picked.target_id }} · 机器人 {{ botName(bot) }}</small>
             </span>
           </template>
           <span v-else class="hint">选择一个群；双击可直接添加。</span>

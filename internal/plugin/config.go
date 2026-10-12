@@ -44,12 +44,11 @@ type Replies struct {
 
 // Overrides store only explicitly selected fields; absence always means inherit.
 type GroupOverride struct {
-	SourceAdapter string                     `json:"source_adapter"`
-	BotID         string                     `json:"bot_id"`
-	GroupID       string                     `json:"group_id"`
-	GroupName     string                     `json:"group_name,omitempty"`
-	Rules         map[string]json.RawMessage `json:"rules"`
-	Replies       map[string]json.RawMessage `json:"replies"`
+	BotID     string                     `json:"bot_id"`
+	GroupID   string                     `json:"group_id"`
+	GroupName string                     `json:"group_name,omitempty"`
+	Rules     map[string]json.RawMessage `json:"rules"`
+	Replies   map[string]json.RawMessage `json:"replies"`
 }
 
 type Config struct {
@@ -123,6 +122,10 @@ func decodeKnown(raw json.RawMessage, dst any, path string) error {
 }
 
 func ParseConfig(values map[string]any) (Config, error) {
+	return parseConfig(values, false)
+}
+
+func parseConfig(values map[string]any, loading bool) (Config, error) {
 	config := Defaults()
 	raw, err := json.Marshal(values)
 	if err != nil {
@@ -165,14 +168,14 @@ func ParseConfig(values map[string]any) (Config, error) {
 				return config, err
 			}
 		}
-		if strings.TrimSpace(g.SourceAdapter) == "" || len(g.SourceAdapter) > 128 || !numericID.MatchString(g.BotID) || !numericID.MatchString(g.GroupID) {
-			return config, invalid(path, "必须选择机器人实例、机器人账号和有效群号")
+		if (!numericID.MatchString(g.BotID) && !(loading && g.BotID == "")) || !numericID.MatchString(g.GroupID) {
+			return config, invalid(path, "必须选择机器人账号和有效群号")
 		}
 		if utf8.RuneCountInString(g.GroupName) > 100 {
 			return config, invalid(path+".group_name", "群名不能超过 100 字")
 		}
-		key := scopeKey(g.SourceAdapter, g.BotID, g.GroupID)
-		if seen[key] {
+		key := groupKey(g.BotID, g.GroupID)
+		if seen[key] && !loading {
 			return config, invalid(path, "同一机器人账号和群不能重复覆盖")
 		}
 		seen[key] = true
@@ -221,9 +224,14 @@ func (c Config) effective(g GroupOverride) (Rules, Replies, error) {
 	}
 	return rules, replies, nil
 }
-func (c Config) ForGroup(adapter, bot, group string) (Rules, Replies) {
+func groupKey(bot, group string) string {
+	b, _ := json.Marshal([]string{bot, group})
+	return string(b)
+}
+
+func (c Config) ForGroup(bot, group string) (Rules, Replies) {
 	for _, g := range c.GroupOverrides {
-		if g.SourceAdapter == adapter && g.BotID == bot && g.GroupID == group {
+		if g.BotID != "" && g.BotID == bot && g.GroupID == group {
 			r, m, _ := c.effective(g)
 			return r, m
 		}

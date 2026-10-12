@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import App from "../src/App.vue";
-import { defaults, effective, normalize, validate } from "../src/model";
+import { defaults, effective, groupKey, normalize, validate, type Adapter } from "../src/model";
+import { botAccounts } from "../src/identity";
 import { buildReplay, sampleValues, middleSample } from "../src/replay";
 
 let wrapper: VueWrapper | undefined;
@@ -193,11 +194,11 @@ describe("settings behavior", () => {
     await button("保存设置").trigger("click");
     await flushPromises();
     expect(saved.group_overrides[0]).toMatchObject({
-      source_adapter: "a",
       bot_id: "9001",
       group_id: "1001",
       rules: { chambers: 4 },
     });
+    expect(saved.group_overrides[0]).not.toHaveProperty("source_adapter");
     expect(saved.group_overrides[0].rules).not.toHaveProperty("timeout_seconds");
     await row("弹膛").get(".row-scope .link").trigger("click");
     await button("保存设置").trigger("click");
@@ -233,6 +234,15 @@ describe("settings behavior", () => {
 });
 
 describe("add group panel", () => {
+  it("rebinds an unresolved legacy group without losing its overrides", async () => {
+    saved.group_overrides = [{ bot_id: "", group_id: "1001", rules: { mute_seconds: 42 }, replies: { miss: "kept" } }];
+    const w = await page();
+    await w.get(".scope-groups .scope").trigger("click");
+    await addGroup();
+    await button("保存设置").trigger("click");
+    await flushPromises();
+    expect(saved.group_overrides).toEqual([{ bot_id: "9001", group_id: "1001", group_name: "", rules: { mute_seconds: 42 }, replies: { miss: "kept" } }]);
+  });
   it("shows QQ avatars for the only bot and its groups", async () => {
     const w = await page();
     await openPanel();
@@ -260,11 +270,28 @@ describe("add group panel", () => {
 });
 
 describe("effective rules", () => {
+  it("deduplicates account connections and migrates old identities without using adapters as keys", () => {
+    const adapters: Adapter[] = [
+      { id: "old", protocol: "onebot11", display_name: "old", enabled: true, state: "stopped", identity: { id: "9001", name: "" } },
+      { id: "new", protocol: "onebot11", display_name: "new", enabled: true, state: "connected", identity: { id: "9001", name: "bot" } },
+      { id: "official", protocol: "qqofficial", display_name: "official", enabled: true, state: "connected", identity: { id: "9002", name: "" } },
+    ];
+    expect(botAccounts(adapters).map((a) => a.id)).toEqual(["new"]);
+    const s = normalize({ group_overrides: [
+      { source_adapter: "old", group_id: "1001", rules: { mute_seconds: 42 } },
+      { source_adapter: "new", bot_id: "9001", group_id: "1001" },
+      { source_adapter: "official", group_id: "1002" },
+    ] }, adapters);
+    expect(s.group_overrides[0].bot_id).toBe("9001");
+    expect(s.group_overrides[0]).not.toHaveProperty("source_adapter");
+    expect(groupKey(s.group_overrides[0])).toBe(groupKey(s.group_overrides[1]));
+    expect(s.group_overrides[2].bot_id).toBe("");
+    expect(validate(s).filter((i) => i.field.startsWith("group_overrides"))).toHaveLength(2);
+  });
   it("inherits unselected fields and catches a global change invalidating a group", () => {
     const s = defaults();
     s.group_overrides = [
       {
-        source_adapter: "a",
         bot_id: "9001",
         group_id: "1001",
         rules: { chambers: 3 },
@@ -291,7 +318,6 @@ describe("effective rules", () => {
       ],
     });
     expect(s.group_overrides[0]).toMatchObject({
-      source_adapter: "offline",
       rules: { timeout_seconds: 200 },
       replies: {},
     });

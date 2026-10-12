@@ -25,6 +25,7 @@ import {
 
 const props = defineProps<{
   group?: GroupOverride;
+  botLabel: string;
   rules: Rules;
   globalRules: Rules;
   prefix: string;
@@ -181,8 +182,7 @@ async function cancelRemove() {
           <div>
             <h2>{{ groupTitle(group) }}</h2>
             <p>
-              群 {{ group.group_id }} · 机器人 {{ group.bot_id }} ·
-              {{ group.source_adapter }}
+              群 {{ group.group_id }} · 机器人 {{ botLabel }}
             </p>
           </div>
         </div>

@@ -5,7 +5,6 @@ export type Replies = typeof manifest.default_config.replies;
 export type RuleKey = keyof Rules;
 export type ReplyKey = keyof Replies;
 export interface GroupOverride {
-  source_adapter: string;
   bot_id: string;
   group_id: string;
   group_name?: string;
@@ -45,7 +44,7 @@ const object = (v: unknown): v is Record<string, unknown> =>
 
 // Preserve invalid declared values so administrators can see and correct them.
 // Undeclared values are dropped in the same way as the backend decoder.
-export function normalize(raw: Record<string, unknown>): Settings {
+export function normalize(raw: Record<string, unknown>, adapters: Adapter[] = []): Settings {
   const d = defaults();
   const known = <T extends object>(base: T, v: unknown): T =>
     Object.fromEntries(
@@ -71,9 +70,11 @@ export function normalize(raw: Record<string, unknown>): Settings {
     group_overrides: Array.isArray(raw.group_overrides)
       ? raw.group_overrides.map((v: unknown) => {
           const g = object(v) ? v : {};
+          const botID = g.bot_id === undefined || g.bot_id === ""
+            ? adapters.find((a) => a.protocol === "onebot11" && a.id === g.source_adapter)?.identity?.id ?? ""
+            : String(g.bot_id ?? "");
           return {
-            source_adapter: String(g.source_adapter ?? ""),
-            bot_id: String(g.bot_id ?? ""),
+            bot_id: botID,
             group_id: String(g.group_id ?? ""),
             group_name: String(g.group_name ?? ""),
             rules: patch(d.rules, g.rules),
@@ -115,7 +116,7 @@ export function effective(s: Settings, g?: GroupOverride) {
   };
 }
 export function groupKey(g: GroupOverride): string {
-  return JSON.stringify([g.source_adapter, g.bot_id, g.group_id]);
+  return JSON.stringify([g.bot_id, g.group_id]);
 }
 
 export function issueLabel(s: Settings, field: string): string {
@@ -129,7 +130,6 @@ export function issueLabel(s: Settings, field: string): string {
   const labels: Record<string, string> = {
     trigger_commands: "命令触发词",
     group_overrides: "单独设置的群",
-    source_adapter: "机器人实例",
     bot_id: "机器人账号",
     group_id: "群号",
     group_name: "群名",
@@ -234,12 +234,10 @@ export function validate(s: Settings, maxTimeout = 3570): Issue[] {
   s.group_overrides.forEach((g, i) => {
     const prefix = `group_overrides.${i}.`;
     if (
-      !g.source_adapter.trim() ||
-      g.source_adapter.length > 128 ||
       !/^[1-9][0-9]{0,19}$/.test(g.bot_id) ||
       !/^[1-9][0-9]{0,19}$/.test(g.group_id)
     )
-      add(prefix.slice(0, -1), "请选择有效的机器人账号和群。");
+      add(prefix.slice(0, -1), "请选择此记录，再添加同一群以绑定机器人账号。");
     if ([...(g.group_name ?? "")].length > 100)
       add(`${prefix}group_name`, "群名不能超过 100 字。");
     if (seen.has(groupKey(g)))

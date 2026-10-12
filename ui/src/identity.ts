@@ -14,7 +14,27 @@ export const botAvatar = (adapter: Adapter) =>
     : undefined;
 
 export const botName = (adapter: Adapter) =>
-  adapter.identity?.name || adapter.display_name;
+  adapter.identity?.name
+    ? `${adapter.identity.name}（${adapter.identity.id}）`
+    : adapter.identity?.id || "待绑定账号";
+
+// The targets API still needs a current connection ID. Keep one representative
+// per account, preferring an online connection, solely for querying that API.
+export function botAccounts(adapters: Adapter[]): Adapter[] {
+  const accounts = new Map<string, Adapter>();
+  for (const adapter of adapters) {
+    if (adapter.protocol !== "onebot11" || !adapter.identity?.id) continue;
+    const previous = accounts.get(adapter.identity.id);
+    if (!previous || (!usableBot(previous) && usableBot(adapter)))
+      accounts.set(adapter.identity.id, adapter);
+  }
+  return [...accounts.values()];
+}
+
+export function accountName(id: string, adapters: Adapter[]): string {
+  const bot = adapters.find((a) => a.protocol === "onebot11" && a.identity?.id === id);
+  return bot ? botName(bot) : id || "待绑定账号";
+}
 
 const states: Record<string, string> = {
   idle: "未启动",
@@ -40,4 +60,4 @@ export function botState(adapter: Adapter): {
 }
 
 export const usableBot = (adapter: Adapter) =>
-  adapter.enabled && !!adapter.identity;
+  adapter.enabled && adapter.state === "connected" && !!adapter.identity;

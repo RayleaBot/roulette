@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import Avatar from "./Avatar.vue";
-import { groupKey, type Adapter, type GroupOverride } from "./model";
-import { groupAvatar } from "./identity";
+import { type Adapter, type GroupOverride } from "./model";
+import { accountName, groupAvatar, usableBot } from "./identity";
 import { groupTitle, overrideCount, overrideSummary } from "./rules";
 
 const props = defineProps<{
@@ -22,13 +22,13 @@ const visible = computed(() =>
   props.overrides
     .map((g, index) => ({ g, index }))
     .filter(({ g }) =>
-      `${g.group_name} ${g.group_id} ${g.source_adapter} ${g.bot_id}`
+      `${g.group_name} ${g.group_id} ${accountName(g.bot_id, props.adapters)}`
         .toLowerCase()
         .includes(props.filter.toLowerCase()),
     ),
 );
 const known = (g: GroupOverride) =>
-  props.adapters.some((a) => a.id === g.source_adapter && a.identity?.id === g.bot_id);
+  props.adapters.some((a) => a.identity?.id === g.bot_id && usableBot(a));
 </script>
 
 <template>
@@ -70,7 +70,7 @@ const known = (g: GroupOverride) =>
         />
       </label>
       <ul class="scope-groups">
-        <li v-for="{ g, index } in visible" :key="groupKey(g)">
+        <li v-for="{ g, index } in visible" :key="index">
           <button
             type="button"
             class="scope"
@@ -80,7 +80,7 @@ const known = (g: GroupOverride) =>
             <Avatar :src="groupAvatar(g.group_id)" :label="groupTitle(g)" :seed="g.group_id" />
             <span class="scope-text">
               <span class="scope-name">{{ groupTitle(g) }}</span>
-              <span class="scope-sub">群 {{ g.group_id }} · 机器人 {{ g.bot_id }}<template v-if="adapters.length && !known(g)"> · 机器人未连接</template></span>
+              <span class="scope-sub">群 {{ g.group_id }} · 机器人 {{ accountName(g.bot_id, adapters) }}<template v-if="g.bot_id && !known(g)"> · 机器人未连接</template></span>
               <span class="scope-sub strong">{{ overrideSummary(g) || "全部跟随默认" }}</span>
             </span>
             <span class="badge" :class="{ none: !overrideCount(g) }" :aria-label="`${overrideCount(g)} 项单独设置`">{{

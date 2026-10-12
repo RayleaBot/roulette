@@ -361,6 +361,39 @@ func TestSettingsSaveValidatesBeforeWritingAndPreservesApplyError(t *testing.T) 
 	}
 }
 
+func TestLegacyOverrideMigrationWritesAccountsAndKeepsWorkingOnWriteFailure(t *testing.T) {
+	for _, failure := range []string{"", "plugin.settings_apply_failed"} {
+		t.Run(failure, func(t *testing.T) {
+			p := newPeer(t, lastBulletHandler(), simpleConfig(), func(p *peer) {
+				p.fail["config.write"] = failure
+			})
+			values := simpleConfig().Values()
+			values["group_overrides"] = []any{map[string]any{
+				"source_adapter": "replaced", "bot_id": "9001", "group_id": "1001",
+				"replies": map[string]any{"start": "account override"},
+			}}
+			p.event("legacy", "config.changed", "management.internal", "0", "0", "", map[string]any{"config": values})
+			p.terminal("legacy")
+			p.mu.Lock()
+			writes := actions(p.frames, "config.write")
+			if len(writes) != 1 {
+				p.mu.Unlock()
+				t.Fatalf("migration writes=%d", len(writes))
+			}
+			stored := writes[0]["data"].(map[string]any)["values"].(map[string]any)["group_overrides"].([]any)[0].(map[string]any)
+			p.mu.Unlock()
+			if _, exists := stored["source_adapter"]; exists || stored["bot_id"] != "9001" {
+				t.Fatalf("wrong migration write: %v", stored)
+			}
+			p.event("open", "message.group", "a", "1001", "2001", "轮盘", nil)
+			p.until(func(f []map[string]any) bool { return len(actions(f, "message.send")) >= 2 })
+			if !strings.Contains(p.texts(), "account override") {
+				t.Fatal("migration failure disabled otherwise usable override")
+			}
+		})
+	}
+}
+
 func TestAllLoadedEndsWithoutFiringGuaranteedBullet(t *testing.T) {
 	c := simpleConfig()
 	c.Rules.EndWhenAllLoaded = true

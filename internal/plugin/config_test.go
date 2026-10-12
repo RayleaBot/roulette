@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	rayleabot "github.com/RayleaBot/RayleaBot/sdk/go"
 )
 
 func TestConfigValidatesEffectiveOverridesAndIgnoresUnknowns(t *testing.T) {
@@ -15,25 +17,74 @@ func TestConfigValidatesEffectiveOverridesAndIgnoresUnknowns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, m := config.ForGroup("a", "100", "200")
+	r, m := config.ForGroup("100", "200")
 	if r.Chambers != 3 || m.Miss != "<target> 安全" {
 		t.Fatalf("wrong effective rules: %#v %#v", r, m)
 	}
-	r, _ = config.ForGroup("b", "100", "200")
-	if r.Chambers != 6 {
-		t.Fatal("override crossed adapter boundary")
-	}
-	r, _ = config.ForGroup("a", "101", "200")
+	r, _ = config.ForGroup("101", "200")
 	if r.Chambers != 6 {
 		t.Fatal("override crossed bot boundary")
 	}
 	encoded, _ := json.Marshal(config)
-	if strings.Contains(string(encoded), "future") {
-		t.Fatal("unknown fields persisted")
+	if strings.Contains(string(encoded), "future") || strings.Contains(string(encoded), "source_adapter") {
+		t.Fatal("unknown or legacy fields persisted")
 	}
 	values["rules"].(map[string]any)["bullets"] = 3
 	if _, err = ParseConfig(values); err == nil {
 		t.Fatal("global update invalidating a group override accepted")
+	}
+}
+
+func TestLegacyOverridesResolveAccountsAndPreserveUnresolvedAndDuplicates(t *testing.T) {
+	values := map[string]any{"group_overrides": []any{
+		map[string]any{"source_adapter": "old", "bot_id": "100", "group_id": "200", "rules": map[string]any{"mute_seconds": 10}},
+		map[string]any{"source_adapter": "new", "group_id": "200", "rules": map[string]any{"mute_seconds": 20}},
+		map[string]any{"source_adapter": "missing", "group_id": "300", "replies": map[string]any{"miss": "kept"}},
+	}}
+	bots := []rayleabot.Bot{
+		{SourceAdapter: "missing", SourceProtocol: "qqofficial", ID: "999"},
+		{SourceAdapter: "new", SourceProtocol: "onebot11", ID: "100"},
+	}
+	config, groups, changed, err := migrateOverrides(values, bots)
+	if err != nil || !changed || len(groups) != 3 {
+		t.Fatalf("migration: changed=%v groups=%v err=%v", changed, groups, err)
+	}
+	for _, item := range groups[:2] {
+		g := item.(map[string]any)
+		if _, exists := g["source_adapter"]; exists || g["bot_id"] != "100" {
+			t.Fatalf("bound record retained adapter: %v", g)
+		}
+	}
+	if groups[2].(map[string]any)["source_adapter"] != "missing" || config.GroupOverrides[2].BotID != "" || string(config.GroupOverrides[2].Replies["miss"]) != `"kept"` {
+		t.Fatal("unresolved record or recovery hint lost")
+	}
+	rules, _ := config.ForGroup("100", "200")
+	if rules.MuteSeconds != 10 {
+		t.Fatal("duplicate load did not preserve first-record precedence")
+	}
+	if _, err := ParseConfig(config.Values()); err == nil {
+		t.Fatal("save accepted duplicate accounts")
+	}
+	values["group_overrides"] = groups
+	bots = append(bots, rayleabot.Bot{SourceAdapter: "missing", SourceProtocol: "onebot11", ID: "101"})
+	config, groups, changed, err = migrateOverrides(values, bots)
+	if err != nil || !changed || config.GroupOverrides[2].BotID != "101" {
+		t.Fatalf("later identity did not recover record: %v", err)
+	}
+	values["group_overrides"] = groups
+	_, _, changed, err = migrateOverrides(values, bots)
+	if err != nil || changed {
+		t.Fatalf("migration is not idempotent: %v", err)
+	}
+}
+
+func TestOverrideDuplicateCheckIgnoresAdapter(t *testing.T) {
+	values := map[string]any{"group_overrides": []any{
+		map[string]any{"source_adapter": "a", "bot_id": "100", "group_id": "200"},
+		map[string]any{"source_adapter": "b", "bot_id": "100", "group_id": "200"},
+	}}
+	if _, err := ParseConfig(values); err == nil {
+		t.Fatal("different adapters bypassed account uniqueness")
 	}
 }
 
